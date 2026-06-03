@@ -42,4 +42,5 @@ jobs:
           
           # 数据源
           DATA_SOURCE: ${{ secrets.DATA_SOURCE }}
-        run: node scripts/predictor/index.cjs
+        # --refresh 强制从网络爬取最新数据，避免使用缓存
+        run: node scripts/predictor/index.cjs --refresh
