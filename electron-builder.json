@@ -1,0 +1,130 @@
+{
+  "appId": "com.lottery.system",
+  "productName": "六合彩特码预测系统",
+  "directories": {
+    "output": "release34"
+  },
+  "files": [
+    "dist",
+    "dist/**/*",
+    "backend/dist/**/*",
+    "backend/node_modules/**/*",
+    "backend/package.json",
+    "electron.cjs",
+    "package.json",
+    "node_modules/**/*",
+    "!node_modules/.cache/**/*",
+    "!node_modules/**/test/**/*",
+    "!node_modules/**/tests/**/*"
+  ],
+  "asar": true,
+  "extraFiles": [
+    {
+      "from": "dist",
+      "to": "app/dist",
+      "filter": ["**/*"]
+    }
+  ],
+  "extraResources": [
+    {
+      "from": "backend",
+      "to": "backend",
+      "filter": [
+        "dist/**/*",
+        "package.json"
+      ]
+    },
+    {
+      "from": "node_modules/express",
+      "to": "backend/node_modules/express"
+    },
+    {
+      "from": "node_modules/cors",
+      "to": "backend/node_modules/cors"
+    },
+    {
+      "from": "node_modules/express-rate-limit",
+      "to": "backend/node_modules/express-rate-limit"
+    },
+    {
+      "from": "node_modules/safe-buffer",
+      "to": "backend/node_modules/safe-buffer"
+    },
+    {
+      "from": "node_modules/axios",
+      "to": "backend/node_modules/axios"
+    },
+    {
+      "from": "node_modules/follow-redirects",
+      "to": "backend/node_modules/follow-redirects"
+    },
+    {
+      "from": "node_modules/proxy-from-env",
+      "to": "backend/node_modules/proxy-from-env"
+    },
+    {
+      "from": "node_modules/combined-stream",
+      "to": "backend/node_modules/combined-stream"
+    },
+    {
+      "from": "node_modules/delayed-stream",
+      "to": "backend/node_modules/delayed-stream"
+    },
+    {
+      "from": "node_modules/form-data",
+      "to": "backend/node_modules/form-data"
+    },
+    {
+      "from": "node_modules/mime-types",
+      "to": "backend/node_modules/mime-types"
+    },
+    {
+      "from": "node_modules/mime-db",
+      "to": "backend/node_modules/mime-db"
+    }
+  ],
+  "asarUnpack": [
+    "backend/node_modules/**/*"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "六合彩特码预测系统"
+  },
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      }
+    ],
+    "category": "public.app-category.utilities"
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64"]
+      },
+      {
+        "target": "deb",
+        "arch": ["x64"]
+      }
+    ],
+    "category": "Utility"
+  }
+}

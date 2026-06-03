@@ -1,0 +1,40 @@
+name: 六合彩自动预测
+
+on:
+  schedule:
+    # 每天 13:30 北京时间 (开奖前预测) = UTC 05:30
+    - cron: '30 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      
+      - name: 运行预测
+        env:
+          # Telegram (推荐，完全免费)
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          
+          # Bark (iOS推送)
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          
+          # 钉钉机器人
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+          
+          # 飞书机器人
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          
+          # 企业微信机器人
+          WEWORK_WEBHOOK_KEY: ${{ secrets.WEWORK_WEBHOOK_KEY }}
+          
+          # 数据源
+          DATA_SOURCE: ${{ secrets.DATA_SOURCE }}
+        run: node scripts/predictor/index.cjs --refresh
