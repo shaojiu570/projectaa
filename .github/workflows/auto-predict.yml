@@ -42,4 +42,4 @@ jobs:
           
           # 数据源
           DATA_SOURCE: ${{ secrets.DATA_SOURCE }}
-        run: node scripts/predictor/index.cjs --refresh
+        run: node scripts/predictor/index.cjs
