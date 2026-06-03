@@ -211,33 +211,41 @@ async function notify(title, content) {
 
 /**
  * 格式化预测结果为推送消息
+ * 格式与本地前端保持一致
  */
 function formatMessage(pred, data) {
   const { formatDate, getZodiac, getColor, getSize, getParity, getElement } = require('./utils.cjs');
   
   const year = new Date().getFullYear();
-  const topNumsL3 = pred.numbers.level3;
-  const topZodL3 = pred.zodiacs.level3;
+  const lastRecord = data[data.length - 1];
+  const nextIssue = data.length + 1;
   const last5 = data.slice(-5).reverse();
 
+  const dateStr = formatDate(new Date()).split(' ')[0];
+  const lastIssueNum = lastRecord ? parseInt(lastRecord.issue) : 0;
+
   const lines = [
-    '**六合彩特码预测**',
+    `【六合彩预测】第${nextIssue}期 (${dateStr})`,
+    `基于第${lastIssueNum}期数据`,
     '',
-    '**TOP 10 推荐号码**',
-    ...topNumsL3.map((r, i) => 
+    `📊 号码第一层（38个）：`,
+    pred.numbers.level1.map(r => String(r.number).padStart(2, '0')).join(' '),
+    '',
+    `🐲 生肖第一层（9个）：`,
+    pred.zodiacs.level1.map(z => z.zodiac).join(' '),
+    '',
+    `**TOP 10 推荐号码**`,
+    ...pred.numbers.level3.map((r, i) => 
       `${i + 1}. **${String(r.number).padStart(2, '0')}**  ${getZodiac(r.number, year)} ${getColor(r.number)} ${getSize(r.number)}${getParity(r.number)} ${getElement(r.number, year)}`
     ),
     '',
-    '**推荐生肖 (9个)**',
-    ...pred.zodiacs.level1.map((z, i) => `${i + 1}. **${z.zodiac}**`),
-    '',
     `**波色**: ${pred.topColor}　**大小**: ${pred.topSize}　**单双**: ${pred.topParity}`,
     '',
-    '**综合推荐**',
+    `**综合推荐**`,
     ...pred.combos.map(c => `> ${c.zodiac}+${String(c.number).padStart(2, '0')} (${(c.probability * 100).toFixed(4)}%)`),
     '',
-    '**最近5期**',
-    ...last5.map(r => `> ${r.issue.slice(-3)}期 **${r.special}** ${getZodiac(r.special, year)} ${getColor(r.special)}`),
+    `最近5期`,
+    ...last5.map(r => `> ${r.issue.slice(-3)}期 ${r.special} ${getZodiac(r.special, year)} ${getColor(r.special)}`),
     '',
     `_${formatDate(new Date())} | ${data.length}期数据 | 19个模型_`,
   ];
