@@ -21,7 +21,7 @@ async function fetchUrl(url) {
     });
     if (!resp.ok) return null;
     const html = await resp.text();
-    if (/六合彩/i.test(html) && /ball/i.test(html)) {
+    if (html.length > 1000) {
       return html;
     }
   } catch (e) {}
@@ -30,14 +30,33 @@ async function fetchUrl(url) {
 
 /**
  * 从HTML解析开奖记录
+ * 支持多种HTML格式
  */
 function extractRecordsFromHTML(html) {
-  const ballRegex = /class="[^"]*ball[^"]*"[^>]*>\s*(\d+)\s*</g;
-  const allNumbers = [];
+  // 方案1：匹配 class 包含 ball 的元素
+  let ballRegex = /class="[^"]*ball[^"]*"[^>]*>\s*(\d+)\s*</gi;
+  let allNumbers = [];
   let m;
   while ((m = ballRegex.exec(html)) !== null) {
     const n = parseInt(m[1]);
-    if (n >= 1 && n <= 49) allNumbers.push(n);
+    if (n >= 1 && n <= 49 && !allNumbers.includes(n)) allNumbers.push(n);
+  }
+
+  // 方案2：如果方案1没拿到数据，尝试匹配数字球常见格式
+  if (allNumbers.length < 7) {
+    ballRegex = /<[^>]+>\s*(\d{1,2})\s*<\/[^>]+>/g;
+    const candidates = [];
+    while ((m = ballRegex.exec(html)) !== null) {
+      const n = parseInt(m[1]);
+      if (n >= 1 && n <= 49) candidates.push(n);
+    }
+    // 只取7的倍数个，按频率筛选
+    if (candidates.length >= 7) {
+      const freq = new Array(50).fill(0);
+      candidates.forEach(n => freq[n]++);
+      const sorted = candidates.sort((a, b) => freq[b] - freq[a]);
+      allNumbers = [...new Set(sorted.slice(0, Math.floor(sorted.length / 7) * 7))];
+    }
   }
 
   const dateIssueRegex = /(\d{4})[年-](\d{1,2})[月-](\d{1,2})[^\d]*?第(\d+)[期期]/g;
@@ -107,6 +126,19 @@ function saveToCache(records) {
 }
 
 /**
+ * 为某一年构建多个可能的URL（与本地爬虫一致）
+ */
+function buildYearUrls(year) {
+  return [
+    `${DATA_SOURCE}${year}/`,
+    `${DATA_SOURCE}?year=${year}`,
+    `${DATA_SOURCE}index_${year}.html`,
+    `${DATA_SOURCE}history/${year}.html`,
+    `${DATA_SOURCE}${year}.html`,
+  ];
+}
+
+/**
  * 获取开奖数据
  * 优先从缓存读取，--refresh 时强制从网络爬取
  */
@@ -127,12 +159,11 @@ async function fetchData() {
   const currentYear = new Date().getFullYear();
   const allRecords = [];
 
-  // 优先尝试默认页面（通常包含最多数据）
+  // 先爬默认页面（通常包含当年全部数据）
   const defaultHtml = await fetchUrl(DATA_SOURCE);
   if (defaultHtml) {
-    console.log('✅ 默认页面获取成功');
     const records = extractRecordsFromHTML(defaultHtml);
-    console.log(`   解析到 ${records.length} 条记录`);
+    console.log(`✅ 默认页面 → ${records.length} 条`);
     for (const r of records) {
       if (!allRecords.find(x => x.issue === r.issue)) {
         allRecords.push(r);
@@ -140,24 +171,29 @@ async function fetchData() {
     }
   }
 
-  // 尝试各年份页面补充数据
-  const yearUrls = [];
-  for (let year = currentYear; year >= 2018; year--) {
-    yearUrls.push(`${DATA_SOURCE}${year}/`);
-  }
-
-  for (const url of yearUrls) {
-    const html = await fetchUrl(url);
-    if (html) {
+  // 逐年份爬取，每个年份尝试多种URL格式
+  for (let year = currentYear; year >= 2020; year--) {
+    const urls = buildYearUrls(year);
+    let found = false;
+    for (const url of urls) {
+      const html = await fetchUrl(url);
+      if (!html) continue;
       const records = extractRecordsFromHTML(html);
       if (records.length > 0) {
-        console.log(`   ${url} → ${records.length} 条`);
+        let added = 0;
         for (const r of records) {
           if (!allRecords.find(x => x.issue === r.issue)) {
             allRecords.push(r);
+            added++;
           }
         }
+        console.log(`   ${year}年(${url.split('?')[0].slice(-20)}) → ${records.length} 条${added > 0 ? '，新增' + added : '（全部重复）'}`);
+        found = true;
+        break;
       }
+    }
+    if (!found) {
+      console.log(`   ${year}年 → 未获取到数据`);
     }
   }
 
