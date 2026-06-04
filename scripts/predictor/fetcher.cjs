@@ -11,25 +11,20 @@ const CACHE_FILE = path.join(__dirname, '../../data/lottery-data.json');
 const REFRESH = process.argv.includes('--refresh');
 
 /**
- * 从多个URL尝试获取数据
+ * 从单个URL获取数据
  */
-async function fetchPages(urls) {
-  for (const url of urls) {
-    try {
-      const resp = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-        signal: AbortSignal.timeout(30000),
-      });
-      if (!resp.ok) continue;
-      const html = await resp.text();
-      if (/六合彩/i.test(html) && /ball/i.test(html)) {
-        console.log('✅ 成功获取:', url);
-        return html;
-      }
-    } catch (e) {
-      // 尝试下一个
+async function fetchUrl(url) {
+  try {
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!resp.ok) return null;
+    const html = await resp.text();
+    if (/六合彩/i.test(html) && /ball/i.test(html)) {
+      return html;
     }
-  }
+  } catch (e) {}
   return null;
 }
 
@@ -113,10 +108,10 @@ function saveToCache(records) {
 
 /**
  * 获取开奖数据
- * 优先从缓存读取，缓存不存在或不满足100条时从网络爬取
+ * 优先从缓存读取，--refresh 时强制从网络爬取
  */
 async function fetchData() {
-  // --refresh 模式跳过缓存，强制从网络爬取
+  // --refresh 模式跳过缓存
   if (!REFRESH) {
     const cached = loadFromCache();
     if (cached && cached.length >= 100) {
@@ -132,18 +127,31 @@ async function fetchData() {
   const currentYear = new Date().getFullYear();
   const allRecords = [];
 
-  // 尝试获取最多5年数据
+  // 优先尝试默认页面（通常包含最多数据）
+  const defaultHtml = await fetchUrl(DATA_SOURCE);
+  if (defaultHtml) {
+    console.log('✅ 默认页面获取成功');
+    const records = extractRecordsFromHTML(defaultHtml);
+    console.log(`   解析到 ${records.length} 条记录`);
+    for (const r of records) {
+      if (!allRecords.find(x => x.issue === r.issue)) {
+        allRecords.push(r);
+      }
+    }
+  }
+
+  // 尝试各年份页面补充数据
   const yearUrls = [];
-  for (let year = currentYear; year >= currentYear - 4; year--) {
+  for (let year = currentYear; year >= 2018; year--) {
     yearUrls.push(`${DATA_SOURCE}${year}/`);
   }
-  yearUrls.push(DATA_SOURCE); // 默认页面
 
   for (const url of yearUrls) {
-    const html = await fetchPages([url]);
+    const html = await fetchUrl(url);
     if (html) {
       const records = extractRecordsFromHTML(html);
       if (records.length > 0) {
+        console.log(`   ${url} → ${records.length} 条`);
         for (const r of records) {
           if (!allRecords.find(x => x.issue === r.issue)) {
             allRecords.push(r);
@@ -155,12 +163,12 @@ async function fetchData() {
 
   allRecords.sort((a, b) => a.issue.localeCompare(b.issue));
 
-  console.log('解析到', allRecords.length, '条记录');
+  console.log('📊 共解析到', allRecords.length, '条记录');
 
   if (allRecords.length >= 100) {
     saveToCache(allRecords);
   } else {
-    console.error('数据不足（' + allRecords.length + '条），需要至少100期');
+    console.error('⚠️ 数据不足（' + allRecords.length + '条），需要至少100期');
   }
 
   return allRecords;
