@@ -30,66 +30,84 @@ async function fetchUrl(url) {
 
 /**
  * 从HTML解析开奖记录
- * 支持多种HTML格式
+ * 完全对齐本地 CrawlerPanel.tsx 的解析逻辑（块结构）
  */
 function extractRecordsFromHTML(html) {
-  // 方案1：匹配 class 包含 ball 的元素
-  let ballRegex = /class="[^"]*ball[^"]*"[^>]*>\s*(\d+)\s*</gi;
-  let allNumbers = [];
-  let m;
-  while ((m = ballRegex.exec(html)) !== null) {
-    const n = parseInt(m[1]);
-    if (n >= 1 && n <= 49 && !allNumbers.includes(n)) allNumbers.push(n);
+  const records = [];
+  const cleanHtml = html.replace(/\r\n/g, '').replace(/\n/g, '');
+
+  // 块结构：<div class="kj-tit">...</div><div class="kj-box">...</div>
+  const blockRegex = /<div class="kj-tit">[\s\S]*?<\/div>[\s\S]*?<div class="kj-box">[\s\S]*?<\/div>/g;
+  const blocks = cleanHtml.match(blockRegex) || [];
+
+  for (const block of blocks) {
+    const dateMatch = block.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    const issueMatch = block.match(/第[\s\S]*?<span[^>]*>(\d+)<\/span>[\s\S]*?期/);
+
+    if (dateMatch && issueMatch) {
+      const year = parseInt(dateMatch[1]);
+      const month = parseInt(dateMatch[2]);
+      const day = parseInt(dateMatch[3]);
+      const issueNum = issueMatch[1].padStart(3, '0');
+
+      // 球号：<dt class="ball-X">N</dt>
+      const ballRegex = /<dt[^>]*class="ball-[^"]*"[^>]*>(\d+)<\/dt>/g;
+      const numbers = [];
+      let ballMatch;
+      while ((ballMatch = ballRegex.exec(block)) !== null) {
+        numbers.push(parseInt(ballMatch[1]));
+      }
+
+      if (numbers.length >= 7) {
+        records.push({
+          issue: `${year}${issueNum}`,
+          date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+          normals: numbers.slice(0, 6),
+          special: numbers[6],
+        });
+      }
+    }
   }
 
-  // 方案2：如果方案1没拿到数据，尝试匹配数字球常见格式
-  if (allNumbers.length < 7) {
-    ballRegex = /<[^>]+>\s*(\d{1,2})\s*<\/[^>]+>/g;
-    const candidates = [];
+  // 后备方案：如果块结构没拿到数据，尝试旧的平铺扫描
+  if (records.length === 0) {
+    const ballRegex = /class="[^"]*ball[^"]*"[^>]*>\s*(\d+)\s*</g;
+    const allNumbers = [];
+    let m;
     while ((m = ballRegex.exec(html)) !== null) {
       const n = parseInt(m[1]);
-      if (n >= 1 && n <= 49) candidates.push(n);
+      if (n >= 1 && n <= 49) allNumbers.push(n);
     }
-    // 只取7的倍数个，按频率筛选
-    if (candidates.length >= 7) {
-      const freq = new Array(50).fill(0);
-      candidates.forEach(n => freq[n]++);
-      const sorted = candidates.sort((a, b) => freq[b] - freq[a]);
-      allNumbers = [...new Set(sorted.slice(0, Math.floor(sorted.length / 7) * 7))];
+    const dateIssueRegex = /(\d{4})[年-](\d{1,2})[月-](\d{1,2})[^\d]*?第(\d+)[期期]/g;
+    const meta = [];
+    while ((m = dateIssueRegex.exec(html)) !== null) {
+      meta.push({
+        date: `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`,
+        issue: m[1] + m[4].padStart(3, '0'),
+      });
+    }
+    if (allNumbers.length >= 7) {
+      const perDraw = 7;
+      const draws = Math.floor(allNumbers.length / perDraw);
+      for (let i = 0; i < draws; i++) {
+        const nums = allNumbers.slice(i * perDraw, (i + 1) * perDraw);
+        const special = nums.pop();
+        const mi = meta[meta.length - 1 - i] || {
+          date: '',
+          issue: `HK${String(draws - i).padStart(4, '0')}`,
+        };
+        records.push({
+          issue: mi.issue,
+          date: mi.date,
+          normals: [...nums],
+          special,
+        });
+      }
+      records.reverse();
     }
   }
 
-  const dateIssueRegex = /(\d{4})[年-](\d{1,2})[月-](\d{1,2})[^\d]*?第(\d+)[期期]/g;
-  const meta = [];
-  while ((m = dateIssueRegex.exec(html)) !== null) {
-    meta.push({
-      date: `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`,
-      issue: m[1] + m[4].padStart(3, '0')
-    });
-  }
-
-  if (allNumbers.length < 7) return [];
-
-  const perDraw = 7;
-  const draws = Math.floor(allNumbers.length / perDraw);
-  const records = [];
-
-  for (let i = 0; i < draws; i++) {
-    const nums = allNumbers.slice(i * perDraw, (i + 1) * perDraw);
-    const special = nums.pop();
-    const mi = meta[meta.length - 1 - i] || {
-      date: '',
-      issue: `HK${String(draws - i).padStart(4, '0')}`
-    };
-    records.push({
-      issue: mi.issue,
-      date: mi.date,
-      normals: [...nums],
-      special
-    });
-  }
-
-  return records.reverse();
+  return records;
 }
 
 /**
