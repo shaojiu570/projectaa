@@ -2,8 +2,11 @@ name: 六合彩自动预测
 
 on:
   schedule:
-    # 每天 13:30 北京时间 (开奖前预测) = UTC 05:30
+    # 三窗口触发防延迟：
+    # 北京 13:10 / 13:30 / 13:50 = UTC 05:10 / 05:30 / 05:50
+    - cron: '10 5 * * *'
     - cron: '30 5 * * *'
+    - cron: '50 5 * * *'
   workflow_dispatch:
     inputs:
       reason:
@@ -16,31 +19,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: 缓存 key（今日日期）
+        id: date
+        run: echo "today=$(TZ='Asia/Shanghai' date +'%Y%m%d')" >> $GITHUB_OUTPUT
+
+      - name: 查缓存 — 今天是否已跑过
+        id: cache-check
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.predict-done
+          key: predict-ran-${{ steps.date.outputs.today }}
+
+      - name: 今天已跑过，跳过
+        if: steps.cache-check.outputs.cache-hit == 'true'
+        run: echo "✅ 今天 $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M') 已执行过，跳过本次" && exit 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      
+
       - name: 运行预测
         env:
-          # Telegram (推荐，完全免费)
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          
-          # Bark (iOS推送)
           BARK_KEY: ${{ secrets.BARK_KEY }}
-          
-          # 钉钉机器人
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
           DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
-          
-          # 飞书机器人
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          
-          # 企业微信机器人
           WEWORK_WEBHOOK_KEY: ${{ secrets.WEWORK_WEBHOOK_KEY }}
-          
-          # 数据源
           DATA_SOURCE: ${{ secrets.DATA_SOURCE }}
-        # --refresh 强制从网络爬取最新数据，避免使用缓存
         run: node scripts/predictor/index.cjs --refresh
+
+      - name: 标记今日已完成
+        run: mkdir -p /tmp && touch /tmp/.predict-done
