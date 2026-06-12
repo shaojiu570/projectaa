@@ -31,15 +31,13 @@ jobs:
           path: /tmp/.predict-done
           key: predict-ran-${{ steps.date.outputs.today }}
 
-      - name: 今天已跑过，跳过
-        if: steps.cache-check.outputs.cache-hit == 'true'
-        run: echo "✅ 今天 $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M') 已执行过，跳过本次" && exit 0
-
       - uses: actions/setup-node@v4
+        if: steps.cache-check.outputs.cache-hit != 'true'
         with:
           node-version: 20
 
       - name: 运行预测
+        if: steps.cache-check.outputs.cache-hit != 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -52,4 +50,5 @@ jobs:
         run: node scripts/predictor/index.cjs --refresh
 
       - name: 标记今日已完成
+        if: steps.cache-check.outputs.cache-hit != 'true'
         run: mkdir -p /tmp && touch /tmp/.predict-done
