@@ -15,7 +15,8 @@ interface CrawlerPanelProps {
 
 const DEFAULT_URLS: CrawlerUrl[] = [
   { id: '1', name: '123720彩票网', url: 'https://kj.123720c.com/kj/', enabled: true },
-  { id: '2', name: '1688188彩票', url: 'https://www.1688188.com/', enabled: true },
+  { id: '2', name: '澳门六合彩', url: 'https://38.11.29.1:50001/historys/mo/', enabled: true },
+  { id: '3', name: '1688188彩票', url: 'https://www.1688188.com/', enabled: true },
 ];
 
 const CRAWLER_URLS_KEY = 'lottery_crawler_urls';
@@ -169,7 +170,7 @@ export default function CrawlerPanel({ onFlash }: CrawlerPanelProps) {
 
     for (const block of blocks) {
       const dateMatch = block.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-      const issueMatch = block.match(/第[\s\S]*?<span[^>]*>(\d+)<\/span>[\s\S]*?期/);
+      const issueMatch = block.match(/第[\s\S]*?<[^>]+>(\d+)<\/[^>]+>[\s\S]*?期/);
 
       if (dateMatch && issueMatch) {
         const year = parseInt(dateMatch[1]);
