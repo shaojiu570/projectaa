@@ -24,6 +24,8 @@ export function runSeparatedPrediction(
       sizePredictions: { level1: [], level2: [] },
       parityPredictions: { level1: [], level2: [] },
       combinedRecommendations: { combos: [], colors: [], size: null, parity: null },
+      headPredictions: [],
+      tailPredictions: [],
       timestamp: new Date().toISOString(),
       activeModelCount: 0,
       usedNumberWeights: [],
@@ -38,6 +40,7 @@ export function runSeparatedPrediction(
   let usedNumberWeights: { id: string; weight: number }[] = [];
   let usedZodiacWeights: { id: string; weight: number }[] = [];
 
+  const fusedNumberProbs = new Array(49).fill(0);
   if (enabledNumberModels.length > 0) {
     const rawWeights = autoWeightOptimization
       ? calculateAdaptiveWeights(data, enabledNumberModels, 'number')
@@ -54,7 +57,6 @@ export function runSeparatedPrediction(
       weight: usedNumberWeights.find(w => w.id === m.id)?.weight || 0,
     }));
 
-    const fusedNumberProbs = new Array(49).fill(0);
     numberOutputs.forEach(output => {
       for (let i = 0; i < 49; i++) {
         fusedNumberProbs[i] += output.weight * output.probs[i];
@@ -201,6 +203,25 @@ export function runSeparatedPrediction(
     parity: topParity,
   };
 
+  const headProbs: Record<string, number> = {};
+  const tailProbs: Record<string, number> = {};
+  for (let n = 1; n <= 49; n++) {
+    const h = Math.floor((n - 1) / 10).toString();
+    headProbs[h] = (headProbs[h] || 0) + fusedNumberProbs[n - 1];
+    const t = (n % 10).toString();
+    tailProbs[t] = (tailProbs[t] || 0) + fusedNumberProbs[n - 1];
+  }
+  const headPredictions = Object.entries(headProbs)
+    .map(([label, probability]) => ({ label, probability, rank: 0 }))
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, 4)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+  const tailPredictions = Object.entries(tailProbs)
+    .map(([label, probability]) => ({ label, probability, rank: 0 }))
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, 8)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+
   return {
     numberPredictions,
     zodiacPredictions,
@@ -208,6 +229,8 @@ export function runSeparatedPrediction(
     sizePredictions,
     parityPredictions,
     combinedRecommendations,
+    headPredictions,
+    tailPredictions,
     timestamp: new Date().toISOString(),
     activeModelCount: enabledNumberModels.length + enabledZodiacModels.length,
     usedNumberWeights,

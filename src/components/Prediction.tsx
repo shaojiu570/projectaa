@@ -16,6 +16,7 @@ import {
   ZodiacProbabilities,
   FinalPredictions,
   ProbabilityDistribution,
+  HeadTailPrediction,
   AttrCard,
   summarize,
 } from './prediction/results';
@@ -190,6 +191,8 @@ function Prediction() {
           <ZodiacProbabilities result={result} zodiacTopK={funnelConfig.zodiacTopK} />
           <FinalPredictions result={result} />
           <ProbabilityDistribution result={result} />
+
+          <HeadTailPrediction result={result} />
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <AttrCard

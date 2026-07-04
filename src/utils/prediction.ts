@@ -19,6 +19,12 @@ export interface ModelOutput {
   normalizedWeight: number;
 }
 
+export interface HeadTailItem {
+  label: string;
+  probability: number;
+  rank: number;
+}
+
 export interface PredictionResult {
   predictions: {
     number: number;
@@ -34,6 +40,8 @@ export interface PredictionResult {
   fusedProbs: number[];
   timestamp: string;
   activeModelCount: number;
+  headPredictions: HeadTailItem[];
+  tailPredictions: HeadTailItem[];
 }
 
 function seededRandom(seed: number): () => number {
@@ -362,6 +370,28 @@ export function runMultiModelPrediction(
     rank: i + 1,
   }));
 
+  const headProbs: Record<string, number> = {};
+  for (let n = 1; n <= 49; n++) {
+    const head = Math.floor((n - 1) / 10).toString();
+    headProbs[head] = (headProbs[head] || 0) + fusedNorm[n - 1];
+  }
+  const headPredictions = Object.entries(headProbs)
+    .map(([label, probability]) => ({ label, probability, rank: 0 }))
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, 4)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+
+  const tailProbs: Record<string, number> = {};
+  for (let n = 1; n <= 49; n++) {
+    const tail = (n % 10).toString();
+    tailProbs[tail] = (tailProbs[tail] || 0) + fusedNorm[n - 1];
+  }
+  const tailPredictions = Object.entries(tailProbs)
+    .map(([label, probability]) => ({ label, probability, rank: 0 }))
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, 8)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+
   return {
     predictions,
     funnelStages: stages,
@@ -370,6 +400,8 @@ export function runMultiModelPrediction(
     fusedProbs: fusedNorm,
     timestamp: new Date().toISOString(),
     activeModelCount: enabled.length,
+    headPredictions,
+    tailPredictions,
   };
 }
 

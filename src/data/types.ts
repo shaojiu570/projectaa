@@ -49,6 +49,12 @@ export interface ElementPrediction {
   rank: number;
 }
 
+export interface HeadTailPredictionItem {
+  label: string;
+  probability: number;
+  rank: number;
+}
+
 export interface SeparatedPredictionResult {
   numberPredictions: {
     level1: NumberPrediction[];
@@ -78,6 +84,8 @@ export interface SeparatedPredictionResult {
     size: '大' | '小' | null;
     parity: '单' | '双' | null;
   };
+  headPredictions: HeadTailPredictionItem[];
+  tailPredictions: HeadTailPredictionItem[];
   timestamp: string;
   activeModelCount: number;
   usedNumberWeights: { id: string; weight: number }[];

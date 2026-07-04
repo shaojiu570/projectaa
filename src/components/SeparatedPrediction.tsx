@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useData } from '../stores/DataContext';
 import { useSeparatedModel } from '../stores/SeparatedModelContext';
 import { runSeparatedPrediction } from '../engine';
-import { SeparatedPredictionResult } from '../data/types';
+import { SeparatedPredictionResult, HeadTailPredictionItem } from '../data/types';
 import { calculateNextIssue, calculateNextDate } from '../utils/nextIssueCalculator';
 import { Play, Settings2, TrendingUp, Zap, Trash2 } from 'lucide-react';
 import NumberBall from './NumberBall';
@@ -320,6 +320,9 @@ function SeparatedPrediction() {
         const level1Zodiacs = (result.zodiacPredictions.level1 || []).map((p: any) => p.zodiac);
         const combos = result.combinedRecommendations?.combos || [];
 
+        const heads = result.headPredictions || [];
+        const tails = result.tailPredictions || [];
+
         // 生成可复制的文本
         const copyText = [
           `【六合彩预测】第${predIssue}期 (${predDate})`,
@@ -333,6 +336,16 @@ function SeparatedPrediction() {
           ``,
           `🎯 综合推荐：`,
           ...combos.map((c: any, i: number) => `推荐${i + 1}：${c.zodiac} + ${String(c.number).padStart(2, '0')}`),
+          ``,
+          ...(heads.length > 0 ? [
+            `🔢 头数预测 Top 4：`,
+            heads.map((h: HeadTailPredictionItem) => `${h.label}头`).join(' '),
+            ``,
+          ] : []),
+          ...(tails.length > 0 ? [
+            `🔢 尾数预测 Top 8：`,
+            tails.map((t: HeadTailPredictionItem) => `${t.label}尾`).join(' '),
+          ] : []),
         ].join('\n');
 
         const handleCopy = () => {
@@ -453,6 +466,81 @@ function SeparatedPrediction() {
                 ))}
               </div>
             </div>
+
+            {(heads.length > 0 || tails.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {heads.length > 0 && (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-gray-800">头数预测 Top 4</h4>
+                      <button
+                        onClick={() => {
+                          const t = heads.map((h: HeadTailPredictionItem) => {
+                            const l = h.label === '0' ? '0头 (1-9)' : `${h.label}头 (${+h.label * 10}-${+h.label * 10 + 9})`;
+                            return `#${h.rank} ${l} ${(h.probability * 100).toFixed(1)}%`;
+                          }).join('\n');
+                          navigator.clipboard.writeText(t);
+                        }}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                      >
+                        复制
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {heads.map((item: HeadTailPredictionItem) => {
+                        const label = item.label === '0' ? '0头 (1-9)' : `${item.label}头 (${+item.label * 10}-${+item.label * 10 + 9})`;
+                        return (
+                          <div key={item.label} className="flex items-center gap-3">
+                            <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0">
+                              {item.rank}
+                            </span>
+                            <span className="text-sm text-gray-700 font-medium">{label}</span>
+                            <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.max(item.probability * 100, 3)}%` }} />
+                            </div>
+                            <span className="text-xs text-gray-500 font-mono w-14 text-right select-all">
+                              {(item.probability * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {tails.length > 0 && (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-gray-800">尾数预测 Top 8</h4>
+                      <button
+                        onClick={() => {
+                          const t = tails.map((t: HeadTailPredictionItem) => `#${t.rank} ${t.label}尾 ${(t.probability * 100).toFixed(1)}%`).join('\n');
+                          navigator.clipboard.writeText(t);
+                        }}
+                        className="text-xs text-pink-600 hover:text-pink-800 flex items-center gap-1"
+                      >
+                        复制
+                      </button>
+                    </div>
+                    <div className="space-y-1.5">
+                      {tails.map((item: HeadTailPredictionItem) => (
+                        <div key={item.label} className="flex items-center gap-3">
+                          <span className="w-6 h-6 rounded-full bg-pink-100 text-pink-700 text-xs font-bold flex items-center justify-center shrink-0">
+                            {item.rank}
+                          </span>
+                          <span className="text-sm text-gray-700 font-medium w-12">{item.label}尾</span>
+                          <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-pink-500 rounded-full" style={{ width: `${Math.max(item.probability * 100, 3)}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-500 font-mono w-14 text-right select-all">
+                            {(item.probability * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 预览文本（可直接选中复制） */}
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
