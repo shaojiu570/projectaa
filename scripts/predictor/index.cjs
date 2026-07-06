@@ -81,6 +81,12 @@ async function main() {
   console.log(`  单双: ${pred.topParity}`);
   console.log('');
 
+  // 头尾数预测
+  console.log('【头尾数预测】');
+  console.log(`  头数 Top4: ${pred.headPreds.map(h => h.label + '头').join(' ')}`);
+  console.log(`  尾数 Top8: ${pred.tailPreds.map(t => t.label + '尾').join(' ')}`);
+  console.log('');
+
   // 综合推荐
   console.log('【综合推荐】');
   pred.combos.forEach(c => {

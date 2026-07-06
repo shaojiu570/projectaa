@@ -193,6 +193,25 @@ function runPrediction(data) {
   }
   combos.sort((a, b) => b.probability - a.probability);
 
+  const headProbs = {};
+  const tailProbs = {};
+  for (let n = 1; n <= 49; n++) {
+    const h = Math.floor((n - 1) / 10).toString();
+    headProbs[h] = (headProbs[h] || 0) + fusedNum[n - 1];
+    const t = (n % 10).toString();
+    tailProbs[t] = (tailProbs[t] || 0) + fusedNum[n - 1];
+  }
+  const headPreds = Object.entries(headProbs)
+    .map(([label, prob]) => ({ label, prob }))
+    .sort((a, b) => b.prob - a.prob)
+    .slice(0, 4)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+  const tailPreds = Object.entries(tailProbs)
+    .map(([label, prob]) => ({ label, prob }))
+    .sort((a, b) => b.prob - a.prob)
+    .slice(0, 8)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+
   return {
     numbers: numberPreds,
     zodiacs: zodiacPreds,
@@ -203,6 +222,8 @@ function runPrediction(data) {
     topColor: colCands[0]?.color || '红波',
     topSize: sizeCands[0]?.size || '大',
     topParity: parCands[0]?.parity || '单',
+    headPreds,
+    tailPreds,
   };
 }
 
