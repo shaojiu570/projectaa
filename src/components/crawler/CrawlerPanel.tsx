@@ -114,33 +114,39 @@ export default function CrawlerPanel({ onFlash }: CrawlerPanelProps) {
       setProgress({ current: y - startYear, total: totalYears, year: y });
       onFlash(`正在爬取 ${y} 年数据...`);
 
-      const urlsToTry = [
-        selectedUrl.url + y + '/',
-        selectedUrl.url + '?year=' + y,
-        selectedUrl.url + 'index_' + y + '.html',
-        selectedUrl.url + 'history/' + y + '.html',
-        selectedUrl.url + y + '.html',
-        selectedUrl.url
-      ];
-
       let html = null;
-      for (const url of urlsToTry) {
-        try {
-          const response = await fetch(url, {
-            method: 'GET',
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-          });
-          if (response.ok) {
-            html = await response.text();
-            if (html && html.length > 1000) break;
-          }
-        } catch (e) { /* skip */ }
+      let usedSource = '';
+      const enabledUrls = urls.filter(u => u.enabled);
+
+      for (const source of enabledUrls) {
+        const urlsToTry = [
+          source.url + y + '/',
+          source.url + '?year=' + y,
+          source.url + 'index_' + y + '.html',
+          source.url + 'history/' + y + '.html',
+          source.url + y + '.html',
+          source.url
+        ];
+
+        for (const url of urlsToTry) {
+          try {
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            });
+            if (response.ok) {
+              html = await response.text();
+              if (html && html.length > 1000) { usedSource = source.name; break; }
+            }
+          } catch (e) { /* skip */ }
+        }
+        if (html) break;
       }
 
       if (html) {
         const records = parseHtmlToRecords(html, y);
         allRecords = [...allRecords, ...records];
-        onFlash(`成功获取 ${y} 年 ${records.length} 期`);
+        onFlash(`成功获取 ${y} 年 ${records.length} 期 (${usedSource})`);
       }
       await new Promise(r => setTimeout(r, 500));
     }

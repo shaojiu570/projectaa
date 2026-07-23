@@ -4,8 +4,48 @@ import { zodiacModelFunctions } from '../models/zodiac';
 import { colorModelFunctions, COLOR_MODELS } from '../models/color';
 import { sizeModelFunctions, SIZE_MODELS } from '../models/size';
 import { parityModelFunctions, PARITY_MODELS } from '../models/parity';
+import { headModelFunctions } from '../models/head';
+import { tailModelFunctions } from '../models/tail';
+import { elementModelFunctions } from '../models/element';
 import { calculateAdaptiveWeights } from './weights';
 import { calculateDynamicLevels } from './funnel';
+
+const HEAD_IDS = ['head_freq', 'head_markov', 'head_trend'];
+const TAIL_IDS = ['tail_freq', 'tail_markov', 'tail_trend'];
+const ELEMENT_IDS = ['element_freq', 'element_markov', 'element_trend'];
+const HEADS = ['0头', '1头', '2头', '3头', '4头'];
+const TAILS = ['0尾', '1尾', '2尾', '3尾', '4尾', '5尾', '6尾', '7尾', '8尾', '9尾'];
+const ELEMENTS = ['金', '木', '水', '火', '土'];
+
+function runCategoryPrediction(
+  data: DrawRecord[],
+  baseSeed: number,
+  modelIds: string[],
+  modelFns: Record<string, (d: DrawRecord[], s: number) => Record<string, number>>,
+  categories: string[],
+  seedOffset: number,
+): { level1: any[]; level2: any[] } {
+  const outputs = modelIds.map((id, i) => ({
+    probs: modelFns[id](data, baseSeed + seedOffset + i * 1000),
+    weight: 1 / modelIds.length,
+  }));
+  const fused: Record<string, number> = {};
+  categories.forEach(c => fused[c] = 0);
+  outputs.forEach(o => {
+    Object.entries(o.probs).forEach(([c, p]) => {
+      fused[c] = (fused[c] || 0) + o.weight * p;
+    });
+  });
+  const total = Object.values(fused).reduce((a, b) => a + b, 0);
+  categories.forEach(c => fused[c] = total > 0 ? (fused[c] || 0) / total : 1 / categories.length);
+  const sorted = categories
+    .map(c => ({ label: c, probability: fused[c] || 0, rank: 0 }))
+    .sort((a, b) => b.probability - a.probability);
+  return {
+    level1: sorted.map((item, i) => ({ ...item, rank: i + 1 })),
+    level2: sorted.slice(0, Math.max(1, Math.ceil(categories.length / 2))).map((item, i) => ({ ...item, rank: i + 1 })),
+  };
+}
 
 export function runSeparatedPrediction(
   data: DrawRecord[],
@@ -26,6 +66,7 @@ export function runSeparatedPrediction(
       combinedRecommendations: { combos: [], colors: [], size: null, parity: null },
       headPredictions: [],
       tailPredictions: [],
+      elementPredictions: [],
       timestamp: new Date().toISOString(),
       activeModelCount: 0,
       usedNumberWeights: [],
@@ -174,6 +215,22 @@ export function runSeparatedPrediction(
     level2: parityCandidates.slice(0, 1).map((pred, index) => ({ ...pred, rank: index + 1 })),
   };
 
+  // 独立头数预测（使用专用头数模型）
+  const headResult = runCategoryPrediction(data, baseSeed, HEAD_IDS, headModelFunctions, HEADS, 5000);
+  const headPredictions: { label: string; probability: number; rank: number }[] = headResult.level1.slice(0, 4);
+
+  // 独立尾数预测（使用专用尾数模型）
+  const tailResult = runCategoryPrediction(data, baseSeed, TAIL_IDS, tailModelFunctions, TAILS, 6000);
+  const tailPredictions: { label: string; probability: number; rank: number }[] = tailResult.level1.slice(0, 8);
+
+  // 独立五行预测（使用专用五行模型）
+  const elementResult = runCategoryPrediction(data, baseSeed, ELEMENT_IDS, elementModelFunctions, ELEMENTS, 7000);
+  const elementPredictions = elementResult.level1.map((p: any) => ({
+    element: p.label,
+    probability: p.probability,
+    rank: p.rank,
+  }));
+
   const topZodiacs = zodiacPredictions.level3.slice(0, 3).map((p: any) => p);
   const topNumbers = numberPredictions.level3.slice(0, 5).map((p: any) => p);
 
@@ -203,25 +260,6 @@ export function runSeparatedPrediction(
     parity: topParity,
   };
 
-  const headProbs: Record<string, number> = {};
-  const tailProbs: Record<string, number> = {};
-  for (let n = 1; n <= 49; n++) {
-    const h = Math.floor((n - 1) / 10).toString();
-    headProbs[h] = (headProbs[h] || 0) + fusedNumberProbs[n - 1];
-    const t = (n % 10).toString();
-    tailProbs[t] = (tailProbs[t] || 0) + fusedNumberProbs[n - 1];
-  }
-  const headPredictions = Object.entries(headProbs)
-    .map(([label, probability]) => ({ label, probability, rank: 0 }))
-    .sort((a, b) => b.probability - a.probability)
-    .slice(0, 4)
-    .map((item, i) => ({ ...item, rank: i + 1 }));
-  const tailPredictions = Object.entries(tailProbs)
-    .map(([label, probability]) => ({ label, probability, rank: 0 }))
-    .sort((a, b) => b.probability - a.probability)
-    .slice(0, 8)
-    .map((item, i) => ({ ...item, rank: i + 1 }));
-
   return {
     numberPredictions,
     zodiacPredictions,
@@ -231,6 +269,7 @@ export function runSeparatedPrediction(
     combinedRecommendations,
     headPredictions,
     tailPredictions,
+    elementPredictions,
     timestamp: new Date().toISOString(),
     activeModelCount: enabledNumberModels.length + enabledZodiacModels.length,
     usedNumberWeights,

@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useMemo, ReactNode, u
 import {
   ZODIAC_NUMBERS as DEFAULT_ZODIAC_NUMBERS,
   COLOR_NUMBERS as DEFAULT_COLOR_NUMBERS,
-  YEAR_ELEMENTS,
+  YEAR_ELEMENTS, ELEMENTS,
 } from '../constants';
 import { saveToStorage, loadFromStorage } from '../utils/storage';
 import { getZodiacByDate as getZodiacByDateUtil, getYearZodiacMapping } from '../utils/lunarCalendar';
@@ -27,6 +27,8 @@ interface MappingCtx {
   updateYearZodiacMap: (year: number, map: Record<string, number[]>) => void;
   colorNumbers: Record<string, number[]>;
   setColorNumbers: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
+  elementNumbers: Record<string, number[]>;
+  setElementNumbers: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
   resetMappings: () => void;
   getZodiac: (n: number, year?: number) => string;
   getColor: (n: number) => string;
@@ -58,6 +60,15 @@ export function MappingProvider({ children }: { children: ReactNode }) {
 
   const [colorNumbers, setColorNumbers] = useState(() => deepCloneMap(DEFAULT_COLOR_NUMBERS));
 
+  const [elementNumbers, setElementNumbers] = useState<Record<string, number[]>>(() => {
+    const saved = loadFromStorage<Record<string, number[]>>('elementNumbers');
+    return saved ?? deepCloneMap(YEAR_ELEMENTS[currentYear] ?? {});
+  });
+
+  useEffect(() => {
+    saveToStorage(elementNumbers, 'elementNumbers');
+  }, [elementNumbers]);
+
   useEffect(() => {
     saveToStorage(yearZodiacMaps, 'yearZodiacMaps');
   }, [yearZodiacMaps]);
@@ -86,7 +97,8 @@ export function MappingProvider({ children }: { children: ReactNode }) {
   const resetMappings = useCallback(() => {
     setYearZodiacMaps(generateYearZodiacMap());
     setColorNumbers(deepCloneMap(DEFAULT_COLOR_NUMBERS));
-  }, []);
+    setElementNumbers(deepCloneMap(YEAR_ELEMENTS[currentYear] ?? {}));
+  }, [currentYear]);
 
   const getZodiac = useCallback((num: number, year?: number): string => {
     const targetYear = year ?? currentYear;
@@ -137,12 +149,13 @@ export function MappingProvider({ children }: { children: ReactNode }) {
     zodiacNumbers, setZodiacNumbers,
     updateYearZodiacMap,
     colorNumbers, setColorNumbers,
+    elementNumbers, setElementNumbers,
     resetMappings,
     getZodiac, getColor, getElement,
     getZodiacByDate, getZodiacByDateAndNumber,
   }), [
-    currentYear, yearZodiacMaps, zodiacNumbers, colorNumbers,
-    setZodiacNumbers, resetMappings, getZodiac, getColor, getElement, updateYearZodiacMap,
+    currentYear, yearZodiacMaps, zodiacNumbers, colorNumbers, elementNumbers,
+    setZodiacNumbers, setElementNumbers, resetMappings, getZodiac, getColor, getElement, updateYearZodiacMap,
     getZodiacByDate, getZodiacByDateAndNumber,
   ]);
 

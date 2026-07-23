@@ -86,6 +86,7 @@ export interface SeparatedPredictionResult {
   };
   headPredictions: HeadTailPredictionItem[];
   tailPredictions: HeadTailPredictionItem[];
+  elementPredictions: ElementPrediction[];
   timestamp: string;
   activeModelCount: number;
   usedNumberWeights: { id: string; weight: number }[];

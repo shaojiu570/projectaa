@@ -152,42 +152,61 @@ export class CrawlerService {
   }
 
   private async crawlYearData(year: number, baseUrl: string): Promise<LotteryRecord[]> {
-    // 策略 1：直接尝试多个 URL (移植 Python 逻辑)
-    const urlsToTry = [
-      `${baseUrl}${year}/`,
-      `${baseUrl}?year=${year}`,
-      `${baseUrl}index_${year}.html`,
-      `${baseUrl}history/${year}.html`,
-      `${baseUrl}${year}.html`
+    // 备用源（当主源全部失败时自动切换）
+    const fallbackSources = [
+      'https://38.11.29.1:50001/historys/mo/',
+      'https://www.1688188.com/',
     ];
+    const allSources = [baseUrl, ...fallbackSources.filter(s => s !== baseUrl)];
 
-    for (const url of urlsToTry) {
-      try {
-        console.log(`尝试直接获取: ${url}`);
-        const response = await RetryService.fetchWithRetry({
-          method: 'GET',
-          url,
-          timeout: 15000,
-          headers: {
-            'User-Agent': RetryService.getRandomUserAgent()
-          }
-        });
+    // 策略 1：遍历所有源，直接尝试多个 URL 模式
+    for (const source of allSources) {
+      const urlsToTry = [
+        `${source}${year}/`,
+        `${source}?year=${year}`,
+        `${source}index_${year}.html`,
+        `${source}history/${year}.html`,
+        `${source}${year}.html`
+      ];
 
-        if (response.status === 200 && response.data) {
-          const records = this.parseHtml(response.data, year);
-          if (records.length > 0) {
-            console.log(`  ✅ 通过 URL 找到数据: ${url}`);
-            return records;
+      for (const url of urlsToTry) {
+        try {
+          console.log(`尝试直接获取: ${url}`);
+          const response = await RetryService.fetchWithRetry({
+            method: 'GET',
+            url,
+            timeout: 15000,
+            headers: {
+              'User-Agent': RetryService.getRandomUserAgent()
+            }
+          });
+
+          if (response.status === 200 && response.data) {
+            const records = this.parseHtml(response.data, year);
+            if (records.length > 0) {
+              console.log(`  ✅ 通过 ${source} 找到数据: ${url}`);
+              return records;
+            }
           }
+        } catch (error) {
+          // 忽略单个 URL 失败，继续尝试下一个
         }
-      } catch (error) {
-        // 忽略单个 URL 失败，继续尝试下一个
+      }
+      console.log(`  ⚠️ ${source} 获取 ${year} 年数据失败，尝试下一个源...`);
+    }
+
+    // 策略 2：所有源都失败，使用 Puppeteer 模拟点击 (作为兜底)
+    console.log(`所有源直接获取失败，尝试使用 Puppeteer 模拟点击...`);
+
+    // Puppeteer 也尝试所有源
+    for (const source of allSources) {
+      const records = await this.crawlWithPuppeteer(year, source);
+      if (records.length > 0) {
+        return records;
       }
     }
 
-    // 策略 2：如果直接获取失败，使用 Puppeteer 模拟点击 (作为兜底)
-    console.log(`直接获取失败，尝试使用 Puppeteer 模拟点击...`);
-    return await this.crawlWithPuppeteer(year, baseUrl);
+    return [];
   }
 
   private async crawlWithPuppeteer(year: number, baseUrl: string): Promise<LotteryRecord[]> {

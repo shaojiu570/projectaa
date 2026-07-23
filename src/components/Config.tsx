@@ -24,7 +24,7 @@ export default function Config() {
     yearZodiacMaps,
     zodiacNumbers, setZodiacNumbers,
     colorNumbers, setColorNumbers,
-    zodiacElement, setZodiacElement,
+    elementNumbers, setElementNumbers,
     resetMappings,
     updateYearZodiacMap,
   } = useMapping();
@@ -39,7 +39,7 @@ export default function Config() {
     // Initialize mapping edit states
     setEditZodiac(Object.fromEntries(Object.entries(zodiacNumbers).map(([k, v]) => [k, v.join(',')])));
     setEditColor(Object.fromEntries(Object.entries(colorNumbers).map(([k, v]) => [k, v.join(',')])));
-    setEditElement({ ...zodiacElement });
+    setEditElement(Object.fromEntries(Object.entries(elementNumbers).map(([k, v]) => [k, v.join(',')])));
   }, []);
 
   const fetchSystemConfig = async () => {
@@ -102,7 +102,12 @@ export default function Config() {
   };
 
   const saveElementMapping = () => {
-    setZodiacElement({ ...editElement });
+    const newMap: Record<string, number[]> = {};
+    for (const e of ['金', '木', '水', '火', '土']) {
+      const nums = (editElement[e] || '').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+      newMap[e] = nums;
+    }
+    setElementNumbers(newMap);
     onFlash('五行映射已保存');
   };
 
@@ -277,6 +282,39 @@ export default function Config() {
                     />
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-yellow-500" /> 五行-号码映射 ({currentYear}年)
+                </h3>
+                <button onClick={saveElementMapping} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 flex items-center gap-2">
+                  <Save className="w-4 h-4" /> 保存五行映射
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {['金', '木', '水', '火', '土'].map(e => {
+                  const colorMap: Record<string, string> = {
+                    '金': 'text-yellow-600 bg-yellow-50 border-yellow-200',
+                    '木': 'text-green-600 bg-green-50 border-green-200',
+                    '水': 'text-blue-600 bg-blue-50 border-blue-200',
+                    '火': 'text-red-600 bg-red-50 border-red-200',
+                    '土': 'text-amber-600 bg-amber-50 border-amber-200',
+                  };
+                  return (
+                    <div key={e} className={`flex items-center gap-3 p-3 rounded-xl border ${colorMap[e] || 'bg-gray-50 border-gray-100'}`}>
+                      <span className="text-lg font-bold w-6 text-center">{e}</span>
+                      <input
+                        type="text"
+                        value={editElement[e] || ''}
+                        onChange={e2 => setEditElement(prev => ({ ...prev, [e]: e2.target.value }))}
+                        className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
