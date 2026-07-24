@@ -3,7 +3,7 @@
  * 基于 release34 程序逻辑
  */
 
-const { ZODIACS, DEFAULT_NUMBER_MODELS, DEFAULT_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS } = require('./constants.cjs');
+const { ZODIACS, DEFAULT_NUMBER_MODELS, DEFAULT_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, YEAR_ELEMENTS } = require('./constants.cjs');
 const { simulateNumberModel, simulateZodiacModel, simulateColorModel, simulateSizeModel, simulateParityModel } = require('./models.cjs');
 const { getZodiac } = require('./utils.cjs');
 
@@ -193,6 +193,25 @@ function runPrediction(data) {
   }
   combos.sort((a, b) => b.probability - a.probability);
 
+  const elementNumbers = YEAR_ELEMENTS[currentYear] || YEAR_ELEMENTS[2026];
+  const elementProbs = {};
+  ['金', '木', '水', '火', '土'].forEach(e => { elementProbs[e] = 0; });
+  for (let n = 1; n <= 49; n++) {
+    for (const [elem, nums] of Object.entries(elementNumbers)) {
+      if (nums.includes(n)) {
+        elementProbs[elem] += fusedNum[n - 1];
+        break;
+      }
+    }
+  }
+  const elementTotal = Object.values(elementProbs).reduce((a, b) => a + b, 0);
+  Object.keys(elementProbs).forEach(e => { elementProbs[e] /= elementTotal; });
+  const elementPreds = Object.entries(elementProbs)
+    .map(([label, prob]) => ({ label, prob }))
+    .sort((a, b) => b.prob - a.prob)
+    .slice(0, 4)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+
   const headProbs = {};
   const tailProbs = {};
   for (let n = 1; n <= 49; n++) {
@@ -224,6 +243,7 @@ function runPrediction(data) {
     topParity: parCands[0]?.parity || '单',
     headPreds,
     tailPreds,
+    elementPreds,
   };
 }
 

@@ -64,6 +64,16 @@ function formatPredictionMessage(pred, data) {
     '',
     `**波色**: ${pred.topColor}　**大小**: ${pred.topSize}　**单双**: ${pred.topParity}`,
     '',
+    ...(pred.headPreds && pred.headPreds.length > 0 ? [
+      `**头数**: ${pred.headPreds.map(h => `${h.label}头`).join(' ')}`,
+    ] : []),
+    ...(pred.tailPreds && pred.tailPreds.length > 0 ? [
+      `**尾数**: ${pred.tailPreds.map(t => `${t.label}尾`).join(' ')}`,
+    ] : []),
+    ...(pred.elementPreds && pred.elementPreds.length > 0 ? [
+      `**五行**: ${pred.elementPreds.map(e => e.label).join(' ')}`,
+    ] : []),
+    '',
     '**综合推荐**',
     ...pred.combos.map(c => `> ${c.zodiac}+${String(c.number).padStart(2, '0')} (${(c.probability * 100).toFixed(4)}%)`),
     '',
@@ -124,6 +134,15 @@ async function main() {
   console.log(pred.zodiacs.level1.map(z => z.zodiac).join(', '));
   console.log('');
   console.log(`【属性】波色: ${pred.topColor}  大小: ${pred.topSize}  单双: ${pred.topParity}`);
+  if (pred.headPreds && pred.headPreds.length > 0) {
+    console.log('【头数】' + pred.headPreds.map(h => `${h.label}头`).join(' '));
+  }
+  if (pred.tailPreds && pred.tailPreds.length > 0) {
+    console.log('【尾数】' + pred.tailPreds.map(t => `${t.label}尾`).join(' '));
+  }
+  if (pred.elementPreds && pred.elementPreds.length > 0) {
+    console.log('【五行】' + pred.elementPreds.map(e => e.label).join(' '));
+  }
   console.log('');
 
   // 4. 推送企微通知
