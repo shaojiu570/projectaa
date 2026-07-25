@@ -1,11 +1,37 @@
 /**
  * 六合彩预测系统 - 预测引擎
- * 基于 release34 程序逻辑
+ * 头数/尾数/五行使用独立模型计算（同步自前端）
  */
 
-const { ZODIACS, DEFAULT_NUMBER_MODELS, DEFAULT_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, YEAR_ELEMENTS } = require('./constants.cjs');
-const { simulateNumberModel, simulateZodiacModel, simulateColorModel, simulateSizeModel, simulateParityModel } = require('./models.cjs');
+const { ZODIACS, DEFAULT_NUMBER_MODELS, DEFAULT_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, HEAD_MODELS, HEAD_CATEGORIES, TAIL_MODELS, TAIL_CATEGORIES, ELEMENT_MODELS, ELEMENT_CATEGORIES } = require('./constants.cjs');
+const { simulateNumberModel, simulateZodiacModel, simulateColorModel, simulateSizeModel, simulateParityModel, simulateHeadModel, simulateTailModel, simulateElementModel } = require('./models.cjs');
 const { getZodiac } = require('./utils.cjs');
+
+/**
+ * 多模型融合（对应前端的 m0 函数）
+ */
+function fuseModels(data, baseSeed, modelIds, modelFn, categories, seedOffset) {
+  const outputs = modelIds.map((id, i) => ({
+    probs: modelFn(id, data, baseSeed + seedOffset + i * 1000),
+    weight: 1 / modelIds.length,
+  }));
+
+  const fused = {};
+  categories.forEach(c => fused[c] = 0);
+  outputs.forEach(o => {
+    Object.entries(o.probs).forEach(([k, v]) => {
+      fused[k] = (fused[k] || 0) + o.weight * v;
+    });
+  });
+
+  const total = Object.values(fused).reduce((a, b) => a + b, 0);
+  categories.forEach(c => fused[c] = total > 0 ? (fused[c] || 0) / total : 1 / categories.length);
+
+  return categories
+    .map((label, i) => ({ label, probability: fused[label] || 0, rank: 0 }))
+    .sort((a, b) => b.probability - a.probability)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+}
 
 /**
  * 计算自适应权重
@@ -31,7 +57,6 @@ function computeAdaptiveWeights(data, models, type) {
 
       if (type === 'number') {
         const probs = simulateNumberModel(m.id, train, seed);
-        // 用 level1 标准（38个）评估
         const top38 = probs.map((p, i) => ({ n: i + 1, p }))
           .sort((a, b) => b.p - a.p)
           .slice(0, 38)
@@ -39,7 +64,6 @@ function computeAdaptiveWeights(data, models, type) {
         hit = top38.includes(test.special);
       } else {
         const probs = simulateZodiacModel(m.id, train, seed + 10000);
-        // 用 level1 标准（9个）评估
         const top9 = Object.entries(probs)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 9)
@@ -69,10 +93,8 @@ function computeAdaptiveWeights(data, models, type) {
 function runPrediction(data) {
   const lastIssue = data[data.length - 1]?.issue || '0';
   const baseSeed = lastIssue.split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
-  const currentYear = new Date().getFullYear();
 
   // ==================== 号码预测 ====================
-  // 三层漏斗：38 → 23 → 10
   const numWeights = computeAdaptiveWeights(data, DEFAULT_NUMBER_MODELS, 'number');
   const numTotal = numWeights.reduce((s, m) => s + m.weight, 0);
   const numOutputs = DEFAULT_NUMBER_MODELS.map(m => ({
@@ -90,13 +112,12 @@ function runPrediction(data) {
     .sort((a, b) => b.prob - a.prob);
 
   const numberPreds = {
-    level1: numCands.slice(0, 38),  // 第一层：38个
-    level2: numCands.slice(0, 23),  // 第二层：23个
-    level3: numCands.slice(0, 10),  // 第三层：10个
+    level1: numCands.slice(0, 38),
+    level2: numCands.slice(0, 23),
+    level3: numCands.slice(0, 10),
   };
 
   // ==================== 生肖预测 ====================
-  // 三层漏斗：9 → 6 → 3
   const zodWeights = computeAdaptiveWeights(data, DEFAULT_ZODIAC_MODELS, 'zodiac');
   const zodTotal = zodWeights.reduce((s, m) => s + m.weight, 0);
   const zodOutputs = DEFAULT_ZODIAC_MODELS.map(m => ({
@@ -114,13 +135,12 @@ function runPrediction(data) {
     .sort((a, b) => b.prob - a.prob);
 
   const zodiacPreds = {
-    level1: zodCands.slice(0, 9),   // 第一层：9个
-    level2: zodCands.slice(0, 6),   // 第二层：6个
-    level3: zodCands.slice(0, 3),   // 第三层：3个
+    level1: zodCands.slice(0, 9),
+    level2: zodCands.slice(0, 6),
+    level3: zodCands.slice(0, 3),
   };
 
   // ==================== 波色预测 ====================
-  // 两层漏斗：2 → 1
   const colOuts = COLOR_MODELS.map(id => ({
     probs: simulateColorModel(id, data, baseSeed + 2000),
     weight: 1 / 3
@@ -136,8 +156,8 @@ function runPrediction(data) {
     .sort((a, b) => b.prob - a.prob);
 
   const colorPreds = {
-    level1: colCands.slice(0, 2),  // 第一层：2个
-    level2: colCands.slice(0, 1),  // 第二层：1个
+    level1: colCands.slice(0, 2),
+    level2: colCands.slice(0, 1),
   };
 
   // ==================== 大小预测 ====================
@@ -180,6 +200,18 @@ function runPrediction(data) {
     level2: parCands.slice(0, 1),
   };
 
+  // ==================== 头数预测（独立模型） ====================
+  const headResult = fuseModels(data, baseSeed, HEAD_MODELS, simulateHeadModel, HEAD_CATEGORIES, 5000);
+  const headPreds = headResult.slice(0, 4).map((item, i) => ({ ...item, rank: i + 1 }));
+
+  // ==================== 尾数预测（独立模型） ====================
+  const tailResult = fuseModels(data, baseSeed, TAIL_MODELS, simulateTailModel, TAIL_CATEGORIES, 6000);
+  const tailPreds = tailResult.slice(0, 8).map((item, i) => ({ ...item, rank: i + 1 }));
+
+  // ==================== 五行预测（独立模型） ====================
+  const elementResult = fuseModels(data, baseSeed, ELEMENT_MODELS, simulateElementModel, ELEMENT_CATEGORIES, 7000);
+  const elementPreds = elementResult.slice(0, 4).map((item, i) => ({ ...item, rank: i + 1 }));
+
   // ==================== 综合推荐 ====================
   const combos = [];
   for (const z of zodiacPreds.level3) {
@@ -192,44 +224,6 @@ function runPrediction(data) {
     }
   }
   combos.sort((a, b) => b.probability - a.probability);
-
-  const elementNumbers = YEAR_ELEMENTS[currentYear] || YEAR_ELEMENTS[2026];
-  const elementProbs = {};
-  ['金', '木', '水', '火', '土'].forEach(e => { elementProbs[e] = 0; });
-  for (let n = 1; n <= 49; n++) {
-    for (const [elem, nums] of Object.entries(elementNumbers)) {
-      if (nums.includes(n)) {
-        elementProbs[elem] += fusedNum[n - 1];
-        break;
-      }
-    }
-  }
-  const elementTotal = Object.values(elementProbs).reduce((a, b) => a + b, 0);
-  Object.keys(elementProbs).forEach(e => { elementProbs[e] /= elementTotal; });
-  const elementPreds = Object.entries(elementProbs)
-    .map(([label, prob]) => ({ label, prob }))
-    .sort((a, b) => b.prob - a.prob)
-    .slice(0, 4)
-    .map((item, i) => ({ ...item, rank: i + 1 }));
-
-  const headProbs = {};
-  const tailProbs = {};
-  for (let n = 1; n <= 49; n++) {
-    const h = Math.floor((n - 1) / 10).toString();
-    headProbs[h] = (headProbs[h] || 0) + fusedNum[n - 1];
-    const t = (n % 10).toString();
-    tailProbs[t] = (tailProbs[t] || 0) + fusedNum[n - 1];
-  }
-  const headPreds = Object.entries(headProbs)
-    .map(([label, prob]) => ({ label, prob }))
-    .sort((a, b) => b.prob - a.prob)
-    .slice(0, 4)
-    .map((item, i) => ({ ...item, rank: i + 1 }));
-  const tailPreds = Object.entries(tailProbs)
-    .map(([label, prob]) => ({ label, prob }))
-    .sort((a, b) => b.prob - a.prob)
-    .slice(0, 8)
-    .map((item, i) => ({ ...item, rank: i + 1 }));
 
   return {
     numbers: numberPreds,

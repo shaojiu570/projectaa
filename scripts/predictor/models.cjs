@@ -3,7 +3,7 @@
  * 基于 release34 程序逻辑
  */
 
-const { ZODIACS } = require('./constants.cjs');
+const { ZODIACS, HEAD_CATEGORIES, TAIL_CATEGORIES, ELEMENT_CATEGORIES } = require('./constants.cjs');
 const { getZodiac, getColor, getSize, getParity, getElement, seededRandom, normalize } = require('./utils.cjs');
 
 /**
@@ -423,10 +423,170 @@ function simulateParityModel(id, data, baseSeed) {
   return parities;
 }
 
+/**
+ * 头数预测模型
+ */
+function simulateHeadModel(id, data, baseSeed) {
+  const probs = {};
+  const rng = seededRandom(baseSeed + id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) + 5000);
+  HEAD_CATEGORIES.forEach(c => probs[c] = 0);
+
+  switch (id) {
+    case 'head_freq': {
+      data.slice(-50).forEach((d, i) => {
+        const h = Math.floor((d.special - 1) / 10).toString() + '头';
+        probs[h] += ((i + 1) / 50) * 0.8;
+      });
+      HEAD_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
+      break;
+    }
+    case 'head_markov': {
+      const r = data.slice(-40), trans = {};
+      HEAD_CATEGORIES.forEach(c => { trans[c] = {}; HEAD_CATEGORIES.forEach(c2 => trans[c][c2] = 0.1); });
+      for (let i = 0; i < r.length - 1; i++) {
+        const f = Math.floor((r[i].special - 1) / 10).toString() + '头';
+        const t = Math.floor((r[i + 1].special - 1) / 10).toString() + '头';
+        trans[f][t] += 1;
+      }
+      const last = Math.floor((r[r.length - 1].special - 1) / 10).toString() + '头';
+      const total = Object.values(trans[last]).reduce((a, b) => a + b, 0);
+      HEAD_CATEGORIES.forEach(c => { probs[c] = trans[last][c] / total; });
+      HEAD_CATEGORIES.forEach(c => probs[c] += rng() * 0.05);
+      break;
+    }
+    case 'head_trend': {
+      const seq = data.slice(-40).map(d => Math.floor((d.special - 1) / 10).toString() + '头');
+      for (let i = 0; i < seq.length - 2; i++) {
+        if (seq[i] === seq[i + 2]) probs[seq[i]] += 0.25;
+      }
+      data.slice(-30).forEach((d, i) => {
+        const h = Math.floor((d.special - 1) / 10).toString() + '头';
+        probs[h] += ((i + 1) / 30) * 0.3;
+      });
+      HEAD_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
+      break;
+    }
+    default:
+      HEAD_CATEGORIES.forEach(c => probs[c] = rng());
+  }
+
+  const total = Object.values(probs).reduce((a, b) => a + b, 0);
+  HEAD_CATEGORIES.forEach(c => probs[c] = total > 0 ? probs[c] / total : 1 / HEAD_CATEGORIES.length);
+  return probs;
+}
+
+/**
+ * 尾数预测模型
+ */
+function simulateTailModel(id, data, baseSeed) {
+  const probs = {};
+  const rng = seededRandom(baseSeed + id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) + 6000);
+  TAIL_CATEGORIES.forEach(c => probs[c] = 0);
+
+  switch (id) {
+    case 'tail_freq': {
+      data.slice(-50).forEach((d, i) => {
+        const t = (d.special % 10).toString() + '尾';
+        probs[t] += ((i + 1) / 50) * 0.8;
+      });
+      TAIL_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
+      break;
+    }
+    case 'tail_markov': {
+      const r = data.slice(-40), trans = {};
+      TAIL_CATEGORIES.forEach(c => { trans[c] = {}; TAIL_CATEGORIES.forEach(c2 => trans[c][c2] = 0.1); });
+      for (let i = 0; i < r.length - 1; i++) {
+        const f = (r[i].special % 10).toString() + '尾';
+        const t = (r[i + 1].special % 10).toString() + '尾';
+        trans[f][t] += 1;
+      }
+      const last = (r[r.length - 1].special % 10).toString() + '尾';
+      const total = Object.values(trans[last]).reduce((a, b) => a + b, 0);
+      TAIL_CATEGORIES.forEach(c => { probs[c] = trans[last][c] / total; });
+      TAIL_CATEGORIES.forEach(c => probs[c] += rng() * 0.05);
+      break;
+    }
+    case 'tail_trend': {
+      const seq = data.slice(-40).map(d => (d.special % 10).toString() + '尾');
+      for (let i = 0; i < seq.length - 2; i++) {
+        if (seq[i] === seq[i + 2]) probs[seq[i]] += 0.25;
+      }
+      data.slice(-30).forEach((d, i) => {
+        const t = (d.special % 10).toString() + '尾';
+        probs[t] += ((i + 1) / 30) * 0.3;
+      });
+      TAIL_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
+      break;
+    }
+    default:
+      TAIL_CATEGORIES.forEach(c => probs[c] = rng());
+  }
+
+  const total = Object.values(probs).reduce((a, b) => a + b, 0);
+  TAIL_CATEGORIES.forEach(c => probs[c] = total > 0 ? probs[c] / total : 1 / TAIL_CATEGORIES.length);
+  return probs;
+}
+
+/**
+ * 五行预测模型
+ */
+function simulateElementModel(id, data, baseSeed) {
+  const probs = {};
+  const rng = seededRandom(baseSeed + id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) + 7000);
+  const currentYear = new Date().getFullYear();
+  ELEMENT_CATEGORIES.forEach(c => probs[c] = 0);
+
+  switch (id) {
+    case 'element_freq': {
+      data.slice(-50).forEach((d, i) => {
+        const elem = getElement(d.special, currentYear);
+        probs[elem] += ((i + 1) / 50) * 0.8;
+      });
+      ELEMENT_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
+      break;
+    }
+    case 'element_markov': {
+      const r = data.slice(-40), trans = {};
+      ELEMENT_CATEGORIES.forEach(c => { trans[c] = {}; ELEMENT_CATEGORIES.forEach(c2 => trans[c][c2] = 0.1); });
+      for (let i = 0; i < r.length - 1; i++) {
+        const f = getElement(r[i].special, currentYear);
+        const t = getElement(r[i + 1].special, currentYear);
+        trans[f][t] += 1;
+      }
+      const last = getElement(r[r.length - 1].special, currentYear);
+      const total = Object.values(trans[last]).reduce((a, b) => a + b, 0);
+      ELEMENT_CATEGORIES.forEach(c => { probs[c] = trans[last][c] / total; });
+      ELEMENT_CATEGORIES.forEach(c => probs[c] += rng() * 0.05);
+      break;
+    }
+    case 'element_trend': {
+      const seq = data.slice(-40).map(d => getElement(d.special, currentYear));
+      for (let i = 0; i < seq.length - 2; i++) {
+        if (seq[i] === seq[i + 2]) probs[seq[i]] += 0.25;
+      }
+      data.slice(-30).forEach((d, i) => {
+        const elem = getElement(d.special, currentYear);
+        probs[elem] += ((i + 1) / 30) * 0.3;
+      });
+      ELEMENT_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
+      break;
+    }
+    default:
+      ELEMENT_CATEGORIES.forEach(c => probs[c] = rng());
+  }
+
+  const total = Object.values(probs).reduce((a, b) => a + b, 0);
+  ELEMENT_CATEGORIES.forEach(c => probs[c] = total > 0 ? probs[c] / total : 1 / ELEMENT_CATEGORIES.length);
+  return probs;
+}
+
 module.exports = {
   simulateNumberModel,
   simulateZodiacModel,
   simulateColorModel,
   simulateSizeModel,
-  simulateParityModel
+  simulateParityModel,
+  simulateHeadModel,
+  simulateTailModel,
+  simulateElementModel,
 };

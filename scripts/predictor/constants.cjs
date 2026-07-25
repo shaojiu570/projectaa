@@ -186,6 +186,12 @@ const DEFAULT_ZODIAC_MODELS = [
 const COLOR_MODELS = ['color_freq', 'color_trend', 'color_pattern'];
 const SIZE_MODELS = ['size_freq', 'size_alternate'];
 const PARITY_MODELS = ['parity_freq', 'parity_trend'];
+const HEAD_MODELS = ['head_freq', 'head_markov', 'head_trend'];
+const HEAD_CATEGORIES = ['0头', '1头', '2头', '3头', '4头'];
+const TAIL_MODELS = ['tail_freq', 'tail_markov', 'tail_trend'];
+const TAIL_CATEGORIES = ['0尾', '1尾', '2尾', '3尾', '4尾', '5尾', '6尾', '7尾', '8尾', '9尾'];
+const ELEMENT_MODELS = ['element_freq', 'element_markov', 'element_trend'];
+const ELEMENT_CATEGORIES = ['金', '木', '水', '火', '土'];
 
 module.exports = {
   ZODIACS,
@@ -197,6 +203,12 @@ module.exports = {
   COLOR_MODELS,
   SIZE_MODELS,
   PARITY_MODELS,
+  HEAD_MODELS,
+  HEAD_CATEGORIES,
+  TAIL_MODELS,
+  TAIL_CATEGORIES,
+  ELEMENT_MODELS,
+  ELEMENT_CATEGORIES,
   getLichunDate,
   getLunarZodiacYear,
   getZodiacByDate,
