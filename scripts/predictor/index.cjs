@@ -76,15 +76,16 @@ async function main() {
 
   // 属性预测
   console.log('【属性预测】');
-  console.log(`  波色: ${pred.topColor}`);
+  console.log(`  波色: ${pred.colors.level1.map(c => c.color).join('、')}`);
   console.log(`  大小: ${pred.topSize}`);
   console.log(`  单双: ${pred.topParity}`);
   console.log('');
 
   // 头尾数预测
   console.log('【头尾数预测】');
-  console.log(`  头数 Top4: ${pred.headPreds.map(h => h.label + '头').join(' ')}`);
-  console.log(`  尾数 Top8: ${pred.tailPreds.map(t => t.label + '尾').join(' ')}`);
+  console.log(`  头数 Top4: ${pred.headPreds.map(h => h.label).join(' ')}`);
+  console.log(`  尾数 Top8: ${pred.tailPreds.map(t => t.label).join(' ')}`);
+  console.log(`  五行 Top4: ${pred.elementPreds.map(e => e.label).join(' ')}`);
   console.log('');
 
   // 综合推荐

@@ -8,6 +8,7 @@
 const { runPrediction } = require('./predictor/predictor.cjs');
 const { fetchData } = require('./predictor/fetcher.cjs');
 const { getZodiac, getColor, getSize, getParity, getElement, formatDate } = require('./predictor/utils.cjs');
+const { DEFAULT_NUMBER_MODELS, DEFAULT_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, HEAD_MODELS, TAIL_MODELS, ELEMENT_MODELS } = require('./predictor/constants.cjs');
 
 const WEWORK_WEBHOOK_KEY = process.env.WEWORK_WEBHOOK_KEY || '';
 
@@ -62,13 +63,13 @@ function formatPredictionMessage(pred, data) {
     '**推荐生肖 (9个)**',
     ...pred.zodiacs.level1.map((z, i) => `${i + 1}. **${z.zodiac}**`),
     '',
-    `**波色**: ${pred.topColor}　**大小**: ${pred.topSize}　**单双**: ${pred.topParity}`,
+      `**波色**: ${pred.colors.level1.map(c => c.color).join('、')}　**大小**: ${pred.topSize}　**单双**: ${pred.topParity}`,
     '',
     ...(pred.headPreds && pred.headPreds.length > 0 ? [
-      `**头数**: ${pred.headPreds.map(h => `${h.label}头`).join(' ')}`,
+      `**头数**: ${pred.headPreds.map(h => h.label).join(' ')}`,
     ] : []),
     ...(pred.tailPreds && pred.tailPreds.length > 0 ? [
-      `**尾数**: ${pred.tailPreds.map(t => `${t.label}尾`).join(' ')}`,
+      `**尾数**: ${pred.tailPreds.map(t => t.label).join(' ')}`,
     ] : []),
     ...(pred.elementPreds && pred.elementPreds.length > 0 ? [
       `**五行**: ${pred.elementPreds.map(e => e.label).join(' ')}`,
@@ -80,7 +81,7 @@ function formatPredictionMessage(pred, data) {
     '**最近5期**',
     ...last5.map(r => `> ${r.issue.slice(-3)}期 **${r.special}** ${getZodiac(r.special, year)} ${getColor(r.special)}`),
     '',
-    `_${formatDate(new Date())} | ${data.length}期数据 | 19个模型_`,
+    `_${formatDate(new Date())} | ${data.length}期数据 | ${DEFAULT_NUMBER_MODELS.length + DEFAULT_ZODIAC_MODELS.length + COLOR_MODELS.length + SIZE_MODELS.length + PARITY_MODELS.length + HEAD_MODELS.length + TAIL_MODELS.length + ELEMENT_MODELS.length}个模型_`,
   ];
 
   return lines.join('\n');

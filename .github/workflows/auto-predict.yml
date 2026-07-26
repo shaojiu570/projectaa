@@ -2,17 +2,21 @@ name: 六合彩自动预测
 
 on:
   schedule:
-    # 三窗口触发防延迟：
-    # 北京 13:10 / 13:30 / 13:50 = UTC 05:10 / 05:30 / 05:50
-    - cron: '10 2 * * *'
+    # 北京 10:00 / 13:30 / 13:50 = UTC 02:00 / 05:30 / 05:50
+    - cron: '0 2 * * *'
     - cron: '30 5 * * *'
     - cron: '50 5 * * *'
   workflow_dispatch:
     inputs:
       reason:
-        description: '手动触发'
+        description: '触发原因'
         required: false
         default: '手动运行'
+      force:
+        description: '跳过今日缓存，强制运行'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   predict:
@@ -24,6 +28,15 @@ jobs:
         id: date
         run: echo "today=$(TZ='Asia/Shanghai' date +'%Y%m%d')" >> $GITHUB_OUTPUT
 
+      - name: 判断是否强制运行
+        id: skip-cache
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.force }}" == "true" ]]; then
+            echo "force=true" >> $GITHUB_OUTPUT
+          else
+            echo "force=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: 查缓存 — 今天是否已跑过
         id: cache-check
         uses: actions/cache@v4
@@ -32,12 +45,12 @@ jobs:
           key: predict-ran-${{ steps.date.outputs.today }}
 
       - uses: actions/setup-node@v4
-        if: steps.cache-check.outputs.cache-hit != 'true'
+        if: steps.cache-check.outputs.cache-hit != 'true' || steps.skip-cache.outputs.force == 'true'
         with:
           node-version: 20
 
       - name: 运行预测
-        if: steps.cache-check.outputs.cache-hit != 'true'
+        if: steps.cache-check.outputs.cache-hit != 'true' || steps.skip-cache.outputs.force == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -49,6 +62,6 @@ jobs:
           DATA_SOURCE: ${{ secrets.DATA_SOURCE }}
         run: node scripts/predictor/index.cjs --refresh
 
-      - name: 标记今日已完成
-        if: steps.cache-check.outputs.cache-hit != 'true'
+      - name: 标记今日已完成（强制运行不标记）
+        if: steps.cache-check.outputs.cache-hit != 'true' && steps.skip-cache.outputs.force != 'true'
         run: mkdir -p /tmp && touch /tmp/.predict-done

@@ -4,6 +4,7 @@
  */
 
 const crypto = require('crypto');
+const { DEFAULT_NUMBER_MODELS, DEFAULT_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, HEAD_MODELS, TAIL_MODELS, ELEMENT_MODELS } = require('./constants.cjs');
 
 // 从环境变量读取配置
 const CONFIG = {
@@ -234,15 +235,16 @@ function formatMessage(pred, data) {
     `🐲 生肖第一层（9个）：`,
     pred.zodiacs.level1.map(z => z.zodiac).join(' '),
     '',
-      `**波色**: ${pred.topColor}　**大小**: ${pred.topSize}　**单双**: ${pred.topParity}`,
+      `**波色**: ${pred.colors.level1.map(c => c.color).join('、')}　**大小**: ${pred.topSize}　**单双**: ${pred.topParity}`,
       '',
-      `🔢 头数 Top4: ${pred.headPreds.map(h => h.label + '头').join(' ')}`,
-      `🔢 尾数 Top8: ${pred.tailPreds.map(t => t.label + '尾').join(' ')}`,
+      `🔢 头数 Top4: ${pred.headPreds.map(h => h.label).join(' ')}`,
+      `🔢 尾数 Top8: ${pred.tailPreds.map(t => t.label).join(' ')}`,
+      `🔢 五行 Top4: ${pred.elementPreds.map(e => e.label).join(' ')}`,
       '',
     `最近5期`,
     ...last5.map(r => `> ${r.issue.slice(-3)}期 ${r.special} ${getZodiac(r.special, year)} ${getColor(r.special)}`),
     '',
-    `_${formatDate(new Date())} | ${data.length}期数据 | 19个模型_`,
+    `_${formatDate(new Date())} | ${data.length}期数据 | ${DEFAULT_NUMBER_MODELS.length + DEFAULT_ZODIAC_MODELS.length + COLOR_MODELS.length + SIZE_MODELS.length + PARITY_MODELS.length + HEAD_MODELS.length + TAIL_MODELS.length + ELEMENT_MODELS.length}个模型_`,
   ];
 
   return lines.join('\n');
