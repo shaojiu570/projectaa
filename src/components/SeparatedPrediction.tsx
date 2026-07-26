@@ -4,7 +4,8 @@ import { useSeparatedModel } from '../stores/SeparatedModelContext';
 import { runSeparatedPrediction } from '../engine';
 import { SeparatedPredictionResult, HeadTailPredictionItem, ElementPrediction } from '../data/types';
 import { calculateNextIssue, calculateNextDate } from '../utils/nextIssueCalculator';
-import { Play, Settings2, TrendingUp, Zap, Trash2 } from 'lucide-react';
+import { syncFromBackend as syncFromBackendService } from '../services/sync';
+import { Play, Settings2, TrendingUp, Zap, Trash2, Globe } from 'lucide-react';
 import NumberBall from './NumberBall';
 
 interface SavedSeparatedPrediction {
@@ -45,21 +46,18 @@ function SeparatedPrediction() {
   
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [crawlStatus, setCrawlStatus] = useState('');
   const [showSettings, setShowSettings] = useState(false);
 
   // 当前显示的结果
   const result = savedPredictions[currentIndex]?.result ?? null;
-
-  // 计算预测期数
-  const nextIssue = data.length > 0 ? calculateNextIssue(data[data.length - 1]) : '';
-  const nextDate = data.length > 0 ? calculateNextDate(data[data.length - 1].date) : '';
 
   // 持久化预测结果
   useEffect(() => {
     localStorage.setItem(SEPARATED_PREDICTION_KEY, JSON.stringify(savedPredictions));
   }, [savedPredictions]);
 
-  const runPredict = useCallback(() => {
+  const runPredict = useCallback(async () => {
     const enabledNumberModels = numberModels.filter(m => m.enabled);
     const enabledZodiacModels = zodiacModels.filter(m => m.enabled);
     
@@ -69,37 +67,52 @@ function SeparatedPrediction() {
     }
 
     setLoading(true);
+    setCrawlStatus('正在同步最新数据...');
+
+    // 先爬取最新数据
+    let predictData = data;
+    try {
+      const freshData = await syncFromBackendService();
+      if (freshData.length > 0) {
+        const combined = [...data, ...freshData];
+        const uniqueMap = new Map(combined.map(item => [item.issue, item]));
+        predictData = Array.from(uniqueMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      }
+    } catch (e) {
+      console.error('数据同步失败，使用本地数据');
+    }
+
+    setCrawlStatus('正在运行预测...');
+
+    const predictionResult = runSeparatedPrediction(
+      predictData, 
+      enabledNumberModels, 
+      enabledZodiacModels,
+      autoWeightOptimization
+    );
     
-    setTimeout(() => {
-      const predictionResult = runSeparatedPrediction(
-        data, 
-        enabledNumberModels, 
-        enabledZodiacModels,
-        autoWeightOptimization
-      );
-      
-      // 保存新的预测结果
-      const newPrediction: SavedSeparatedPrediction = {
-        time: new Date().toLocaleString(),
-        result: predictionResult,
-        enabledNumberModelIds: enabledNumberModels.map(m => m.id),
-        enabledZodiacModelIds: enabledZodiacModels.map(m => m.id),
-        trainLastIssue: data[data.length - 1]?.issue || '',
-        predictIssue: calculateNextIssue(data[data.length - 1]),
-        predictDate: calculateNextDate(data[data.length - 1].date),
-        // 直接快照第一层，回测时直接用，不重新计算
-        level1Numbers: predictionResult.numberPredictions.level1.map((p: any) => p.number),
-        level1Zodiacs: predictionResult.zodiacPredictions.level1.map((p: any) => p.zodiac),
-      };
-      
-      setSavedPredictions(prev => {
-        const updated = [newPrediction, ...prev].slice(0, MAX_SAVED_RESULTS);
-        return updated;
-      });
-      setCurrentIndex(0); // 显示最新的结果
-      setLoading(false);
-    }, 800);
-  }, [data, numberModels, zodiacModels]);
+    // 保存新的预测结果
+    const newPrediction: SavedSeparatedPrediction = {
+      time: new Date().toLocaleString(),
+      result: predictionResult,
+      enabledNumberModelIds: enabledNumberModels.map(m => m.id),
+      enabledZodiacModelIds: enabledZodiacModels.map(m => m.id),
+      trainLastIssue: predictData[predictData.length - 1]?.issue || '',
+      predictIssue: calculateNextIssue(predictData[predictData.length - 1]),
+      predictDate: calculateNextDate(predictData[predictData.length - 1]?.date || ''),
+      // 直接快照第一层，回测时直接用，不重新计算
+      level1Numbers: predictionResult.numberPredictions.level1.map((p: any) => p.number),
+      level1Zodiacs: predictionResult.zodiacPredictions.level1.map((p: any) => p.zodiac),
+    };
+    
+    setSavedPredictions(prev => {
+      const updated = [newPrediction, ...prev].slice(0, MAX_SAVED_RESULTS);
+      return updated;
+    });
+    setCurrentIndex(0); // 显示最新的结果
+    setCrawlStatus('');
+    setLoading(false);
+  }, [data, numberModels, zodiacModels, autoWeightOptimization]);
 
   const clearHistory = () => {
     if (confirm('确定要清空所有预测历史吗？')) {
@@ -155,7 +168,7 @@ function SeparatedPrediction() {
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  预测中...
+                  {crawlStatus || '预测中...'}
                 </>
               ) : (
                 <>
@@ -313,9 +326,9 @@ function SeparatedPrediction() {
 
 {/* 预测结果展示 - 只显示第一层 */}
       {result && result.numberPredictions && (() => {
-        const predIssue = savedPredictions[currentIndex]?.predictIssue?.slice(-3) || nextIssue.slice(-3);
-        const trainIssue = savedPredictions[currentIndex]?.trainLastIssue?.slice(-3) || '';
-        const predDate = savedPredictions[currentIndex]?.predictDate || nextDate;
+        const predIssue = savedPredictions[currentIndex]?.predictIssue?.slice(-3) || '—';
+        const trainIssue = savedPredictions[currentIndex]?.trainLastIssue?.slice(-3) || '—';
+        const predDate = savedPredictions[currentIndex]?.predictDate || '—';
         const level1Numbers = (result.numberPredictions.level1 || []).map((p: any) => p.number);
         const level1Zodiacs = (result.zodiacPredictions.level1 || []).map((p: any) => p.zodiac);
         const combos = result.combinedRecommendations?.combos || [];

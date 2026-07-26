@@ -31,6 +31,9 @@ interface SavedPrediction {
   result: PredictionResult;
   funnelConfig: typeof DEFAULT_FUNNEL;
   enabledModelIds: string[];
+  trainLastIssue?: string;
+  predictIssue?: string;
+  predictDate?: string;
 }
 
 function Prediction() {
@@ -56,9 +59,6 @@ function Prediction() {
 
   const result = savedPredictions[currentIndex]?.result ?? null;
 
-  const nextIssue = data.length > 0 ? calculateNextIssue(data[data.length - 1]) : '';
-  const nextDate = data.length > 0 ? calculateNextDate(data[data.length - 1].date) : '';
-
   const enabledModels = models.filter(m => m.enabled);
   const totalWeight = enabledModels.reduce((s, m) => s + m.weight, 0);
 
@@ -73,6 +73,9 @@ function Prediction() {
         result: res,
         funnelConfig: { ...funnelConfig },
         enabledModelIds: enabledModels.map(m => m.id),
+        trainLastIssue: data[data.length - 1]?.issue || '',
+        predictIssue: calculateNextIssue(data[data.length - 1]),
+        predictDate: calculateNextDate(data[data.length - 1]?.date || ''),
       };
 
       setSavedPredictions(prev => {
