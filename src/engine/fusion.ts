@@ -10,9 +10,9 @@ import { elementModelFunctions } from '../models/element';
 import { calculateAdaptiveWeights } from './weights';
 import { calculateDynamicLevels } from './funnel';
 
-const HEAD_IDS = ['head_freq', 'head_markov', 'head_trend'];
-const TAIL_IDS = ['tail_freq', 'tail_markov', 'tail_trend'];
-const ELEMENT_IDS = ['element_freq', 'element_markov', 'element_trend'];
+const HEAD_IDS = ['head_freq', 'head_markov', 'head_trend', 'head_pattern', 'head_combo'];
+const TAIL_IDS = ['tail_freq', 'tail_markov', 'tail_trend', 'tail_pattern', 'tail_combo'];
+const ELEMENT_IDS = ['element_freq', 'element_markov', 'element_trend', 'element_pattern', 'element_combo'];
 const HEADS = ['0头', '1头', '2头', '3头', '4头'];
 const TAILS = ['0尾', '1尾', '2尾', '3尾', '4尾', '5尾', '6尾', '7尾', '8尾', '9尾'];
 const ELEMENTS = ['金', '木', '水', '火', '土'];

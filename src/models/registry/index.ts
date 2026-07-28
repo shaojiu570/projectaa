@@ -1,12 +1,12 @@
 import { modelRegistry } from './registry';
 import { resnetModel, colorMarkovModel, elementMarkovModel, sizeMarkovModel, parityMarkovModel, hotTrendModel, coldTrendModel, maTrendModel, randomNumberModel } from '../number';
-import { zodiacFreqModel, zodiacMarkovModel, zodiacPatternModel, zodiacResnetModel, zodiacLstmModel, zodiacComboModel } from '../zodiac';
+import { zodiacFreqModel, zodiacMarkovModel, zodiacPatternModel, zodiacResnetModel, zodiacLstmModel, zodiacComboModel, zodiacCondProbModel, zodiacBayesModel } from '../zodiac';
 import { colorFreqModel, colorTrendModel, colorPatternModel } from '../color';
 import { sizeFreqModel, sizeAlternateModel } from '../size';
 import { parityFreqModel, parityTrendModel } from '../parity';
-import { headFreqModel, headMarkovModel, headTrendModel } from '../head';
-import { tailFreqModel, tailMarkovModel, tailTrendModel } from '../tail';
-import { elementFreqModel, elementMarkovModel, elementTrendModel } from '../element';
+import { headFreqModel, headMarkovModel, headTrendModel, headPatternModel, headComboModel } from '../head';
+import { tailFreqModel, tailMarkovModel, tailTrendModel, tailPatternModel, tailComboModel } from '../tail';
+import { elementFreqModel, elementMarkovModel, elementTrendModel, elementPatternModel, elementComboModel } from '../element';
 
 const numberModels = [
   { id: 'resnet', name: '号码-ResNet', desc: '1D残差网络，时间序列分析', fn: resnetModel, weight: 0.2 },
@@ -29,6 +29,8 @@ const categoryModels = [
   { id: 'zodiac_pattern', name: '生肖-周期分析', desc: '遗漏与平均间隔对比', fn: zodiacPatternModel, cats: ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪'], weight: 0.15 },
   { id: 'zodiac_freq', name: '生肖-冷热均衡', desc: '近30期低频生肖反向加权', fn: zodiacFreqModel, cats: ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪'], weight: 0.1 },
   { id: 'zodiac_combo', name: '生肖-综合融合', desc: '遗漏+马尔可夫+频率融合', fn: zodiacComboModel, cats: ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪'], weight: 0.1 },
+  { id: 'zodiac_condProb', name: '生肖-条件概率', desc: '基于号码头尾数的条件概率', fn: zodiacCondProbModel, cats: ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪'], weight: 0.1 },
+  { id: 'zodiac_bayes', name: '生肖-贝叶斯', desc: '遗漏似然×先验概率', fn: zodiacBayesModel, cats: ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪'], weight: 0.1 },
   { id: 'color_freq', name: '波色-频率分析', desc: '波色出现频率', fn: colorFreqModel, cats: ['红','蓝','绿'], weight: 1/3 },
   { id: 'color_trend', name: '波色-趋势分析', desc: '波色切换趋势', fn: colorTrendModel, cats: ['红','蓝','绿'], weight: 1/3 },
   { id: 'color_pattern', name: '波色-模式识别', desc: '波色隔期重复', fn: colorPatternModel, cats: ['红','蓝','绿'], weight: 1/3 },
@@ -39,15 +41,21 @@ const categoryModels = [
   // 头部预测模型
   { id: 'head_freq', name: '头数-频率分析', desc: '头数历史频率分析', fn: headFreqModel, cats: ['0头','1头','2头','3头','4头'], weight: 1/3 },
   { id: 'head_markov', name: '头数-马尔可夫', desc: '头数转移概率分析', fn: headMarkovModel, cats: ['0头','1头','2头','3头','4头'], weight: 1/3 },
-  { id: 'head_trend', name: '头数-趋势分析', desc: '头数隔期重复模式', fn: headTrendModel, cats: ['0头','1头','2头','3头','4头'], weight: 1/3 },
+  { id: 'head_trend', name: '头数-趋势分析', desc: '头数隔期重复模式', fn: headTrendModel, cats: ['0头','1头','2头','3头','4头'], weight: 1/5 },
+  { id: 'head_pattern', name: '头数-周期分析', desc: '头数遗漏与平均间隔对比', fn: headPatternModel, cats: ['0头','1头','2头','3头','4头'], weight: 1/5 },
+  { id: 'head_combo', name: '头数-综合融合', desc: '头数频率+马尔可夫融合', fn: headComboModel, cats: ['0头','1头','2头','3头','4头'], weight: 1/5 },
   // 尾部预测模型
-  { id: 'tail_freq', name: '尾数-频率分析', desc: '尾数历史频率分析', fn: tailFreqModel, cats: ['0尾','1尾','2尾','3尾','4尾','5尾','6尾','7尾','8尾','9尾'], weight: 1/3 },
+  { id: 'tail_freq', name: '尾数-频率分析', desc: '尾数历史频率分析', fn: tailFreqModel, cats: ['0尾','1尾','2尾','3尾','4尾','5尾','6尾','7尾','8尾','9尾'], weight: 1/5 },
   { id: 'tail_markov', name: '尾数-马尔可夫', desc: '尾数转移概率分析', fn: tailMarkovModel, cats: ['0尾','1尾','2尾','3尾','4尾','5尾','6尾','7尾','8尾','9尾'], weight: 1/3 },
-  { id: 'tail_trend', name: '尾数-趋势分析', desc: '尾数隔期重复模式', fn: tailTrendModel, cats: ['0尾','1尾','2尾','3尾','4尾','5尾','6尾','7尾','8尾','9尾'], weight: 1/3 },
+  { id: 'tail_trend', name: '尾数-趋势分析', desc: '尾数隔期重复模式', fn: tailTrendModel, cats: ['0尾','1尾','2尾','3尾','4尾','5尾','6尾','7尾','8尾','9尾'], weight: 1/5 },
+  { id: 'tail_pattern', name: '尾数-周期分析', desc: '尾数遗漏与平均间隔对比', fn: tailPatternModel, cats: ['0尾','1尾','2尾','3尾','4尾','5尾','6尾','7尾','8尾','9尾'], weight: 1/5 },
+  { id: 'tail_combo', name: '尾数-综合融合', desc: '尾数频率+马尔可夫融合', fn: tailComboModel, cats: ['0尾','1尾','2尾','3尾','4尾','5尾','6尾','7尾','8尾','9尾'], weight: 1/5 },
   // 五行预测模型
-  { id: 'element_freq', name: '五行-频率分析', desc: '五行历史频率分析', fn: elementFreqModel, cats: ['金','木','水','火','土'], weight: 1/3 },
-  { id: 'element_markov', name: '五行-马尔可夫', desc: '五行转移概率分析', fn: elementMarkovModel, cats: ['金','木','水','火','土'], weight: 1/3 },
-  { id: 'element_trend', name: '五行-趋势分析', desc: '五行隔期重复模式', fn: elementTrendModel, cats: ['金','木','水','火','土'], weight: 1/3 },
+  { id: 'element_freq', name: '五行-频率分析', desc: '五行历史频率分析', fn: elementFreqModel, cats: ['金','木','水','火','土'], weight: 1/5 },
+  { id: 'element_markov', name: '五行-马尔可夫', desc: '五行转移概率分析', fn: elementMarkovModel, cats: ['金','木','水','火','土'], weight: 1/5 },
+  { id: 'element_trend', name: '五行-趋势分析', desc: '五行隔期重复模式', fn: elementTrendModel, cats: ['金','木','水','火','土'], weight: 1/5 },
+  { id: 'element_pattern', name: '五行-周期分析', desc: '五行遗漏与平均间隔对比', fn: elementPatternModel, cats: ['金','木','水','火','土'], weight: 1/5 },
+  { id: 'element_combo', name: '五行-综合融合', desc: '五行频率+马尔可夫融合', fn: elementComboModel, cats: ['金','木','水','火','土'], weight: 1/5 },
 ];
 
 numberModels.forEach(m => {

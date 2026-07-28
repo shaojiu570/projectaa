@@ -287,6 +287,50 @@ function simulateZodiacModel(id, data, baseSeed) {
       break;
     }
     
+    case 'zodiac_condProb': {
+      if (data.length < 2) { ZODIACS.forEach(z => { probs[z] = 1 / 12; }); break; }
+      const rCp = data.slice(-60);
+      const zHeads = {}, zTails = {};
+      ZODIACS.forEach(z => { zHeads[z] = {}; zTails[z] = {}; [0,1,2,3,4].forEach(h => zHeads[z][h] = 0.1); [0,1,2,3,4,5,6,7,8,9].forEach(t => zTails[z][t] = 0.1); });
+      rCp.forEach(d => {
+        const z = getZodiac(d.special, currentYear);
+        const head = Math.floor(d.special / 10), tail = d.special % 10;
+        if (zHeads[z][head] != null) zHeads[z][head]++;
+        if (zTails[z][tail] != null) zTails[z][tail]++;
+      });
+      const lz = getZodiac(rCp[rCp.length - 1].special, currentYear);
+      const ln = rCp[rCp.length - 1].special, lh = Math.floor(ln / 10), lt = ln % 10;
+      ZODIACS.forEach(z => {
+        let score = 0, count = 0;
+        if (zHeads[lz] && zHeads[lz][lh] != null) { score += zHeads[lz][lh]; count++; }
+        if (zTails[lz] && zTails[lz][lt] != null) { score += zTails[lz][lt]; count++; }
+        probs[z] = count > 0 ? score / count : 1 / 12;
+      });
+      ZODIACS.forEach(z => { probs[z] += rng() * 0.05; });
+      break;
+    }
+    case 'zodiac_bayes': {
+      if (data.length < 20) { ZODIACS.forEach(z => { probs[z] = 1 / 12; }); break; }
+      const rBy = data.slice(-40);
+      const prior = {};
+      ZODIACS.forEach(z => { prior[z] = 0; });
+      rBy.forEach(d => { prior[getZodiac(d.special, currentYear)]++; });
+      const priorTotal = Object.values(prior).reduce((a, b) => a + b, 0) || 1;
+      ZODIACS.forEach(z => { prior[z] = prior[z] / priorTotal; });
+      const lastMissing = {};
+      ZODIACS.forEach(z => { lastMissing[z] = 0; });
+      for (let i = data.length - 1; i >= 0; i--) {
+        const z = getZodiac(data[i].special, currentYear);
+        if (lastMissing[z] === 0) lastMissing[z] = data.length - i;
+        if (Object.values(lastMissing).every(v => v > 0)) break;
+      }
+      const maxMissing = Math.max(...Object.values(lastMissing), 1);
+      ZODIACS.forEach(z => {
+        probs[z] = ((lastMissing[z] || data.length) / maxMissing) * (prior[z] || 0.01);
+      });
+      ZODIACS.forEach(z => { probs[z] += rng() * 0.03; });
+      break;
+    }
     default:
       ZODIACS.forEach(z => { probs[z] = rng(); });
   }
@@ -466,6 +510,50 @@ function simulateHeadModel(id, data, baseSeed) {
       HEAD_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
       break;
     }
+    case 'head_pattern': {
+      const lastPosH = {}, gapsH = {};
+      HEAD_CATEGORIES.forEach(c => { gapsH[c] = []; });
+      for (let i = 0; i < data.length; i++) {
+        const h = Math.floor((data[i].special - 1) / 10).toString() + '头';
+        if (lastPosH[h] !== undefined) gapsH[h].push(i - lastPosH[h]);
+        lastPosH[h] = i;
+      }
+      const curMissingH = {};
+      HEAD_CATEGORIES.forEach(c => { curMissingH[c] = 0; });
+      for (let i = data.length - 1; i >= 0; i--) {
+        const h = Math.floor((data[i].special - 1) / 10).toString() + '头';
+        if (curMissingH[h] === 0) curMissingH[h] = data.length - 1 - i;
+        if (Object.values(curMissingH).every(v => v > 0)) break;
+      }
+      HEAD_CATEGORIES.forEach(c => {
+        const avgGap = gapsH[c].length > 0 ? gapsH[c].reduce((a, b) => a + b, 0) / gapsH[c].length : 10;
+        const ratio = (curMissingH[c] || 0) / avgGap;
+        probs[c] = ratio > 1 ? ratio : ratio * 0.5;
+      });
+      HEAD_CATEGORIES.forEach(c => probs[c] += rng() * 0.05);
+      break;
+    }
+    case 'head_combo': {
+      const rHc = data.slice(-50), freqH = {};
+      HEAD_CATEGORIES.forEach(c => { freqH[c] = 0; });
+      rHc.forEach(d => { freqH[Math.floor((d.special - 1) / 10).toString() + '头']++; });
+      const maxFreqH = Math.max(...Object.values(freqH), 1);
+      const transH = {};
+      HEAD_CATEGORIES.forEach(c => { transH[c] = {}; HEAD_CATEGORIES.forEach(c2 => transH[c][c2] = 0.1); });
+      for (let i = 1; i < rHc.length; i++) {
+        const f = Math.floor((rHc[i - 1].special - 1) / 10).toString() + '头';
+        const t = Math.floor((rHc[i].special - 1) / 10).toString() + '头';
+        transH[f][t]++;
+      }
+      const lastHc = Math.floor((rHc[rHc.length - 1].special - 1) / 10).toString() + '头';
+      const rowH = transH[lastHc];
+      const rowTotalH = Object.values(rowH).reduce((a, b) => a + b, 0);
+      HEAD_CATEGORIES.forEach(c => {
+        probs[c] = (freqH[c] / maxFreqH) * 0.4 + (rowH[c] / rowTotalH) * 0.6;
+      });
+      HEAD_CATEGORIES.forEach(c => probs[c] += rng() * 0.03);
+      break;
+    }
     default:
       HEAD_CATEGORIES.forEach(c => probs[c] = rng());
   }
@@ -516,6 +604,50 @@ function simulateTailModel(id, data, baseSeed) {
         probs[t] += ((i + 1) / 30) * 0.3;
       });
       TAIL_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
+      break;
+    }
+    case 'tail_pattern': {
+      const lastPosT = {}, gapsT = {};
+      TAIL_CATEGORIES.forEach(c => { gapsT[c] = []; });
+      for (let i = 0; i < data.length; i++) {
+        const t = (data[i].special % 10).toString() + '尾';
+        if (lastPosT[t] !== undefined) gapsT[t].push(i - lastPosT[t]);
+        lastPosT[t] = i;
+      }
+      const curMissingT = {};
+      TAIL_CATEGORIES.forEach(c => { curMissingT[c] = 0; });
+      for (let i = data.length - 1; i >= 0; i--) {
+        const t = (data[i].special % 10).toString() + '尾';
+        if (curMissingT[t] === 0) curMissingT[t] = data.length - 1 - i;
+        if (Object.values(curMissingT).every(v => v > 0)) break;
+      }
+      TAIL_CATEGORIES.forEach(c => {
+        const avgGap = gapsT[c].length > 0 ? gapsT[c].reduce((a, b) => a + b, 0) / gapsT[c].length : 10;
+        const ratio = (curMissingT[c] || 0) / avgGap;
+        probs[c] = ratio > 1 ? ratio : ratio * 0.5;
+      });
+      TAIL_CATEGORIES.forEach(c => probs[c] += rng() * 0.05);
+      break;
+    }
+    case 'tail_combo': {
+      const rTc = data.slice(-50), freqT = {};
+      TAIL_CATEGORIES.forEach(c => { freqT[c] = 0; });
+      rTc.forEach(d => { freqT[(d.special % 10).toString() + '尾']++; });
+      const maxFreqT = Math.max(...Object.values(freqT), 1);
+      const transT = {};
+      TAIL_CATEGORIES.forEach(c => { transT[c] = {}; TAIL_CATEGORIES.forEach(c2 => transT[c][c2] = 0.1); });
+      for (let i = 1; i < rTc.length; i++) {
+        const f = (rTc[i - 1].special % 10).toString() + '尾';
+        const t = (rTc[i].special % 10).toString() + '尾';
+        transT[f][t]++;
+      }
+      const lastTc = (rTc[rTc.length - 1].special % 10).toString() + '尾';
+      const rowT = transT[lastTc];
+      const rowTotalT = Object.values(rowT).reduce((a, b) => a + b, 0);
+      TAIL_CATEGORIES.forEach(c => {
+        probs[c] = (freqT[c] / maxFreqT) * 0.4 + (rowT[c] / rowTotalT) * 0.6;
+      });
+      TAIL_CATEGORIES.forEach(c => probs[c] += rng() * 0.03);
       break;
     }
     default:
@@ -569,6 +701,56 @@ function simulateElementModel(id, data, baseSeed) {
         probs[elem] += ((i + 1) / 30) * 0.3;
       });
       ELEMENT_CATEGORIES.forEach(c => probs[c] += rng() * 0.1);
+      break;
+    }
+    case 'element_pattern': {
+      const lastPosE = {}, gapsE = {};
+      ELEMENT_CATEGORIES.forEach(c => { gapsE[c] = []; });
+      for (let i = 0; i < data.length; i++) {
+        const e = getElement(data[i].special, currentYear);
+        if (!ELEMENT_CATEGORIES.includes(e)) continue;
+        if (lastPosE[e] !== undefined) gapsE[e].push(i - lastPosE[e]);
+        lastPosE[e] = i;
+      }
+      const curMissingE = {};
+      ELEMENT_CATEGORIES.forEach(c => { curMissingE[c] = 0; });
+      for (let i = data.length - 1; i >= 0; i--) {
+        const e = getElement(data[i].special, currentYear);
+        if (!ELEMENT_CATEGORIES.includes(e)) continue;
+        if (curMissingE[e] === 0) curMissingE[e] = data.length - 1 - i;
+        if (Object.values(curMissingE).every(v => v > 0)) break;
+      }
+      ELEMENT_CATEGORIES.forEach(c => {
+        const avgGap = gapsE[c].length > 0 ? gapsE[c].reduce((a, b) => a + b, 0) / gapsE[c].length : 10;
+        const ratio = (curMissingE[c] || 0) / avgGap;
+        probs[c] = ratio > 1 ? ratio : ratio * 0.5;
+      });
+      ELEMENT_CATEGORIES.forEach(c => probs[c] += rng() * 0.05);
+      break;
+    }
+    case 'element_combo': {
+      const rEc = data.slice(-50), freqE = {};
+      ELEMENT_CATEGORIES.forEach(c => { freqE[c] = 0; });
+      rEc.forEach(d => {
+        const e = getElement(d.special, currentYear);
+        if (ELEMENT_CATEGORIES.includes(e)) freqE[e]++;
+      });
+      const maxFreqE = Math.max(...Object.values(freqE), 1);
+      const transE = {};
+      ELEMENT_CATEGORIES.forEach(c => { transE[c] = {}; ELEMENT_CATEGORIES.forEach(c2 => transE[c][c2] = 0.1); });
+      for (let i = 1; i < rEc.length; i++) {
+        const f = getElement(rEc[i - 1].special, currentYear);
+        const t = getElement(rEc[i].special, currentYear);
+        if (ELEMENT_CATEGORIES.includes(f) && ELEMENT_CATEGORIES.includes(t)) transE[f][t]++;
+      }
+      const lastEc = getElement(rEc[rEc.length - 1].special, currentYear);
+      const lastCatE = ELEMENT_CATEGORIES.includes(lastEc) ? lastEc : ELEMENT_CATEGORIES[0];
+      const rowE = transE[lastCatE];
+      const rowTotalE = Object.values(rowE).reduce((a, b) => a + b, 0);
+      ELEMENT_CATEGORIES.forEach(c => {
+        probs[c] = (freqE[c] / maxFreqE) * 0.4 + (rowE[c] / rowTotalE) * 0.6;
+      });
+      ELEMENT_CATEGORIES.forEach(c => probs[c] += rng() * 0.03);
       break;
     }
     default:

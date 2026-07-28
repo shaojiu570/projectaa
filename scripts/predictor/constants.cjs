@@ -175,22 +175,24 @@ const DEFAULT_NUMBER_MODELS = [
 
 // 默认生肖模型配置
 const DEFAULT_ZODIAC_MODELS = [
-  { id: 'zodiac_resnet', name: '生肖-遗漏值', weight: 0.25 },
-  { id: 'zodiac_lstm', name: '生肖-一阶马尔可夫', weight: 0.20 },
-  { id: 'zodiac_markov', name: '生肖-二阶马尔可夫', weight: 0.20 },
-  { id: 'zodiac_pattern', name: '生肖-周期分析', weight: 0.15 },
+  { id: 'zodiac_resnet', name: '生肖-遗漏值', weight: 0.20 },
+  { id: 'zodiac_lstm', name: '生肖-一阶马尔可夫', weight: 0.15 },
+  { id: 'zodiac_markov', name: '生肖-二阶马尔可夫', weight: 0.15 },
+  { id: 'zodiac_pattern', name: '生肖-周期分析', weight: 0.10 },
   { id: 'zodiac_freq', name: '生肖-冷热均衡', weight: 0.10 },
   { id: 'zodiac_combo', name: '生肖-综合融合', weight: 0.10 },
+  { id: 'zodiac_condProb', name: '生肖-条件概率', weight: 0.10 },
+  { id: 'zodiac_bayes', name: '生肖-贝叶斯', weight: 0.10 },
 ];
 
 const COLOR_MODELS = ['color_freq', 'color_trend', 'color_pattern'];
 const SIZE_MODELS = ['size_freq', 'size_alternate'];
 const PARITY_MODELS = ['parity_freq', 'parity_trend'];
-const HEAD_MODELS = ['head_freq', 'head_markov', 'head_trend'];
+const HEAD_MODELS = ['head_freq', 'head_markov', 'head_trend', 'head_pattern', 'head_combo'];
 const HEAD_CATEGORIES = ['0头', '1头', '2头', '3头', '4头'];
-const TAIL_MODELS = ['tail_freq', 'tail_markov', 'tail_trend'];
+const TAIL_MODELS = ['tail_freq', 'tail_markov', 'tail_trend', 'tail_pattern', 'tail_combo'];
 const TAIL_CATEGORIES = ['0尾', '1尾', '2尾', '3尾', '4尾', '5尾', '6尾', '7尾', '8尾', '9尾'];
-const ELEMENT_MODELS = ['element_freq', 'element_markov', 'element_trend'];
+const ELEMENT_MODELS = ['element_freq', 'element_markov', 'element_trend', 'element_pattern', 'element_combo'];
 const ELEMENT_CATEGORIES = ['金', '木', '水', '火', '土'];
 
 module.exports = {
