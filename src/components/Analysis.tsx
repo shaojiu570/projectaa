@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { DrawRecord } from '../data/types';
 import MarkovAnalysis from './analysis/MarkovAnalysis';
 import TrendAnalysis from './analysis/TrendAnalysis';
-import FeatureAnalysis from './analysis/FeatureAnalysis';
 
 interface Props {
   data: DrawRecord[];
@@ -11,11 +10,10 @@ interface Props {
 const TABS = [
   { key: 'markov' as const, label: '马尔可夫分析', icon: '🔗' },
   { key: 'trend' as const, label: '走势分析', icon: '📈' },
-  { key: 'features' as const, label: '特征分析', icon: '🧮' },
 ];
 
 export default function Analysis({ data }: Props) {
-  const [activeTab, setActiveTab] = useState<'markov' | 'trend' | 'features'>('markov');
+  const [activeTab, setActiveTab] = useState<'markov' | 'trend'>('markov');
 
   return (
     <div className="space-y-6">
@@ -38,7 +36,6 @@ export default function Analysis({ data }: Props) {
 
       {activeTab === 'markov' && <MarkovAnalysis data={data} />}
       {activeTab === 'trend' && <TrendAnalysis data={data} />}
-      {activeTab === 'features' && <FeatureAnalysis data={data} />}
     </div>
   );
 }

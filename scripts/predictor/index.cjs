@@ -42,8 +42,8 @@ async function main() {
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
   
-  // 号码预测 - 第一层 38个
-  console.log('【号码预测 - Level1 (38个)】');
+  // 号码预测 - 第一层 30个
+  console.log('【号码预测 - Level1 (30个)】');
   console.log(pred.numbers.level1.map(r => String(r.number).padStart(2, '0')).join(', '));
   console.log('');
   

@@ -1,11 +1,9 @@
-import { DrawRecord, ModelConfig } from '../data/types';
-import { numberModelFunctions } from '../models/number';
-import { zodiacModelFunctions } from '../models/zodiac';
-import { getZodiac } from '../constants/zodiac';
+import { DrawRecord } from '../data/types';
+import { resolveUnifiedModelFn, SEPARATED_TYPE_META } from '../models/library';
 
 export function calculateAdaptiveWeights(
   data: DrawRecord[],
-  models: ModelConfig[],
+  models: { id: string; weight: number }[],
   type: 'number' | 'zodiac'
 ): { id: string; weight: number }[] {
   if (models.length === 0 || data.length < 30) {
@@ -26,13 +24,13 @@ export function calculateAdaptiveWeights(
       const lastIssue = trainData[trainData.length - 1]?.issue || '0';
       const adaptSeed = lastIssue.split('').reduce((a: number, c: string) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
       if (type === 'number') {
-        const probs = numberModelFunctions[model.id](trainData, adaptSeed);
-        const top38 = probs.map((p, i) => ({ num: i + 1, p })).sort((a, b) => b.p - a.p).slice(0, 38).map(x => x.num);
-        hit = top38.includes(testRecord.special);
+        const probs = resolveUnifiedModelFn('number', model.id)(trainData, adaptSeed) as number[];
+        const top30 = probs.map((p, i) => ({ num: i + 1, p })).sort((a, b) => b.p - a.p).slice(0, 30).map(x => x.num);
+        hit = top30.includes(testRecord.special);
       } else {
-        const probs = zodiacModelFunctions[model.id](trainData, adaptSeed + 10000);
+        const probs = resolveUnifiedModelFn('zodiac', model.id)(trainData, adaptSeed + 10000) as Record<string, number>;
         const top9 = Object.entries(probs).sort((a, b) => b[1] - a[1]).slice(0, 9).map(x => x[0]);
-        hit = top9.includes(getZodiac(testRecord.special));
+        hit = top9.includes(SEPARATED_TYPE_META.zodiac.getCat(testRecord.special));
       }
       const existing = allScores.find(s => s.id === model.id);
       if (existing) existing.scores.push(hit ? 1 : 0);

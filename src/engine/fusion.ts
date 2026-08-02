@@ -1,33 +1,23 @@
-import { DrawRecord, ModelConfig, SeparatedPredictionResult } from '../data/types';
-import { numberModelFunctions } from '../models/number';
-import { zodiacModelFunctions } from '../models/zodiac';
+import { DrawRecord, SeparatedPredictionResult } from '../data/types';
 import { colorModelFunctions, COLOR_MODELS } from '../models/color';
 import { sizeModelFunctions, SIZE_MODELS } from '../models/size';
 import { parityModelFunctions, PARITY_MODELS } from '../models/parity';
-import { headModelFunctions } from '../models/head';
-import { tailModelFunctions } from '../models/tail';
-import { elementModelFunctions } from '../models/element';
 import { calculateAdaptiveWeights } from './weights';
 import { calculateDynamicLevels } from './funnel';
-
-const HEAD_IDS = ['head_freq', 'head_markov', 'head_trend', 'head_pattern', 'head_combo'];
-const TAIL_IDS = ['tail_freq', 'tail_markov', 'tail_trend', 'tail_pattern', 'tail_combo'];
-const ELEMENT_IDS = ['element_freq', 'element_markov', 'element_trend', 'element_pattern', 'element_combo'];
-const HEADS = ['0头', '1头', '2头', '3头', '4头'];
-const TAILS = ['0尾', '1尾', '2尾', '3尾', '4尾', '5尾', '6尾', '7尾', '8尾', '9尾'];
-const ELEMENTS = ['金', '木', '水', '火', '土'];
+import { resolveUnifiedModelFn, HEAD_CATS, TAIL_CATS, ELEMENT_CATS, UnifiedPredictFn } from '../models/library';
 
 function runCategoryPrediction(
   data: DrawRecord[],
   baseSeed: number,
-  modelIds: string[],
-  modelFns: Record<string, (d: DrawRecord[], s: number) => Record<string, number>>,
+  models: { id: string; weight: number }[],
+  resolveFn: (modelId: string) => UnifiedPredictFn,
   categories: string[],
   seedOffset: number,
 ): { level1: any[]; level2: any[] } {
-  const outputs = modelIds.map((id, i) => ({
-    probs: modelFns[id](data, baseSeed + seedOffset + i * 1000),
-    weight: 1 / modelIds.length,
+  const totalWeight = models.reduce((s, m) => s + m.weight, 0);
+  const outputs = models.map((m, i) => ({
+    probs: resolveFn(m.id)(data, baseSeed + seedOffset + i * 1000) as Record<string, number>,
+    weight: totalWeight > 0 ? m.weight / totalWeight : 1 / models.length,
   }));
   const fused: Record<string, number> = {};
   categories.forEach(c => fused[c] = 0);
@@ -49,12 +39,15 @@ function runCategoryPrediction(
 
 export function runSeparatedPrediction(
   data: DrawRecord[],
-  numberModels: ModelConfig[],
-  zodiacModels: ModelConfig[],
+  numberModels: { id: string; weight: number }[],
+  zodiacModels: { id: string; weight: number }[],
+  headModels: { id: string; weight: number }[],
+  tailModels: { id: string; weight: number }[],
+  elementModels: { id: string; weight: number }[],
   autoWeightOptimization: boolean = true,
 ): SeparatedPredictionResult {
-  const enabledNumberModels = numberModels.filter(m => m.enabled);
-  const enabledZodiacModels = zodiacModels.filter(m => m.enabled);
+  const enabledNumberModels = numberModels;
+  const enabledZodiacModels = zodiacModels;
 
   if (enabledNumberModels.length === 0 && enabledZodiacModels.length === 0) {
     return {
@@ -94,7 +87,7 @@ export function runSeparatedPrediction(
 
     const numberOutputs = enabledNumberModels.map(m => ({
       modelId: m.id,
-      probs: numberModelFunctions[m.id](data, baseSeed),
+      probs: resolveUnifiedModelFn('number', m.id)(data, baseSeed) as number[],
       weight: usedNumberWeights.find(w => w.id === m.id)?.weight || 0,
     }));
 
@@ -129,7 +122,7 @@ export function runSeparatedPrediction(
 
     const zodiacOutputs = enabledZodiacModels.map(m => ({
       modelId: m.id,
-      probs: zodiacModelFunctions[m.id](data, baseSeed + 10000),
+      probs: resolveUnifiedModelFn('zodiac', m.id)(data, baseSeed + 10000) as Record<string, number>,
       weight: usedZodiacWeights.find(w => w.id === m.id)?.weight || 0,
     }));
 
@@ -215,21 +208,24 @@ export function runSeparatedPrediction(
     level2: parityCandidates.slice(0, 1).map((pred, index) => ({ ...pred, rank: index + 1 })),
   };
 
-  // 独立头数预测（使用专用头数模型）
-  const headResult = runCategoryPrediction(data, baseSeed, HEAD_IDS, headModelFunctions, HEADS, 5000);
-  const headPredictions: { label: string; probability: number; rank: number }[] = headResult.level1.slice(0, 4);
+  // 独立头数预测（使用已选头数模型）
+  const headPredictions: { label: string; probability: number; rank: number }[] = headModels.length > 0
+    ? runCategoryPrediction(data, baseSeed, headModels, id => resolveUnifiedModelFn('head', id), HEAD_CATS, 5000).level1.slice(0, 4)
+    : [];
 
-  // 独立尾数预测（使用专用尾数模型）
-  const tailResult = runCategoryPrediction(data, baseSeed, TAIL_IDS, tailModelFunctions, TAILS, 6000);
-  const tailPredictions: { label: string; probability: number; rank: number }[] = tailResult.level1.slice(0, 8);
+  // 独立尾数预测（使用已选尾数模型）
+  const tailPredictions: { label: string; probability: number; rank: number }[] = tailModels.length > 0
+    ? runCategoryPrediction(data, baseSeed, tailModels, id => resolveUnifiedModelFn('tail', id), TAIL_CATS, 6000).level1.slice(0, 8)
+    : [];
 
-  // 独立五行预测（使用专用五行模型）
-  const elementResult = runCategoryPrediction(data, baseSeed, ELEMENT_IDS, elementModelFunctions, ELEMENTS, 7000);
-  const elementPredictions = elementResult.level1.map((p: any) => ({
-    element: p.label,
-    probability: p.probability,
-    rank: p.rank,
-  }));
+  // 独立五行预测（使用已选五行模型）
+  const elementPredictions = elementModels.length > 0
+    ? runCategoryPrediction(data, baseSeed, elementModels, id => resolveUnifiedModelFn('element', id), ELEMENT_CATS, 7000).level1.map((p: any) => ({
+        element: p.label,
+        probability: p.probability,
+        rank: p.rank,
+      }))
+    : [];
 
   const topZodiacs = zodiacPredictions.level3.slice(0, 3).map((p: any) => p);
   const topNumbers = numberPredictions.level3.slice(0, 5).map((p: any) => p);

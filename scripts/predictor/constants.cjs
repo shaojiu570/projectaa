@@ -156,44 +156,79 @@ const YEAR_ELEMENTS = {
   },
 };
 
-// 默认号码模型配置
-const DEFAULT_NUMBER_MODELS = [
-  { id: 'resnet', name: '号码-ResNet', weight: 0.2 },
-  { id: 'lstm', name: '号码-LSTM', weight: 0.15 },
-  { id: 'xgboost', name: '号码-XGBoost', weight: 0.1 },
-  { id: 'lightgbm', name: '号码-LightGBM', weight: 0.08 },
-  { id: 'hot_cold', name: '号码-冷热', weight: 0.1 },
-  { id: 'interval', name: '号码-间隔', weight: 0.07 },
-  { id: 'color_markov', name: '号码-波色马尔可夫', weight: 0.1 },
-  { id: 'element_markov', name: '号码-五行马尔可夫', weight: 0.1 },
-  { id: 'size_markov', name: '号码-大小马尔可夫', weight: 0.05 },
-  { id: 'parity_markov', name: '号码-奇偶马尔可夫', weight: 0.05 },
-  { id: 'hot_trend', name: '号码-热号趋势', weight: 0.08 },
-  { id: 'cold_trend', name: '号码-冷号趋势', weight: 0.05 },
-  { id: 'ma_trend', name: '号码-MA趋势', weight: 0.07 },
-];
+// 通用算法（统一模型库，可预测任意分类类型：号码/生肖/头/尾/五行）
+const GENERIC_ALGO_NAMES = {
+  hot: '热度', cold: '遗漏', cycle: '周期', markov: '马尔科夫', ma: '移动平均',
+  condProb: '条件概率', bayes: '贝叶斯', apriori: 'Apriori',
+  rf: '随机森林', xgboost: 'XGBoost', lstm: 'LSTM',
+  genetic: '遗传算法', rl: '强化学习', bandit: '多臂老虎机',
+};
 
-// 默认生肖模型配置
-const DEFAULT_ZODIAC_MODELS = [
-  { id: 'zodiac_resnet', name: '生肖-遗漏值', weight: 0.20 },
-  { id: 'zodiac_lstm', name: '生肖-一阶马尔可夫', weight: 0.15 },
-  { id: 'zodiac_markov', name: '生肖-二阶马尔可夫', weight: 0.15 },
-  { id: 'zodiac_pattern', name: '生肖-周期分析', weight: 0.10 },
-  { id: 'zodiac_freq', name: '生肖-冷热均衡', weight: 0.10 },
-  { id: 'zodiac_combo', name: '生肖-综合融合', weight: 0.10 },
-  { id: 'zodiac_condProb', name: '生肖-条件概率', weight: 0.10 },
-  { id: 'zodiac_bayes', name: '生肖-贝叶斯', weight: 0.10 },
-];
+function defaultGenericModels(weight = 0.1) {
+  return Object.keys(GENERIC_ALGO_NAMES).map(id => ({ id, name: GENERIC_ALGO_NAMES[id], weight }));
+}
+
+// 默认模型配置（统一模型库 = 全部通用算法；可由智能预测「推送配置」覆盖）
+const DEFAULT_NUMBER_MODELS = defaultGenericModels();
+const DEFAULT_ZODIAC_MODELS = defaultGenericModels();
 
 const COLOR_MODELS = ['color_freq', 'color_trend', 'color_pattern'];
 const SIZE_MODELS = ['size_freq', 'size_alternate'];
 const PARITY_MODELS = ['parity_freq', 'parity_trend'];
-const HEAD_MODELS = ['head_freq', 'head_markov', 'head_trend', 'head_pattern', 'head_combo'];
+const DEFAULT_HEAD_MODELS = defaultGenericModels();
 const HEAD_CATEGORIES = ['0头', '1头', '2头', '3头', '4头'];
-const TAIL_MODELS = ['tail_freq', 'tail_markov', 'tail_trend', 'tail_pattern', 'tail_combo'];
+const DEFAULT_TAIL_MODELS = defaultGenericModels();
 const TAIL_CATEGORIES = ['0尾', '1尾', '2尾', '3尾', '4尾', '5尾', '6尾', '7尾', '8尾', '9尾'];
-const ELEMENT_MODELS = ['element_freq', 'element_markov', 'element_trend', 'element_pattern', 'element_combo'];
+const DEFAULT_ELEMENT_MODELS = defaultGenericModels();
 const ELEMENT_CATEGORIES = ['金', '木', '水', '火', '土'];
+
+// ==================== 外部推送配置覆盖 ====================
+// 由智能预测「推送配置」生成的 config.json，替换各类型使用的模型。
+// 结构: { number:[{id,weight}], zodiac:[{id,weight}], head:[{id,weight}], tail:[{id,weight}], element:[{id,weight}] }
+let PUSHED_CONFIG = null;
+try {
+  PUSHED_CONFIG = require('./config.json');
+} catch (e) {
+  PUSHED_CONFIG = null;
+}
+
+function normalizeWeighted(id, weight) {
+  return { id, weight };
+}
+
+// 号码/生肖：若推送配置存在，用推送的模型列表替换（保留默认名称）
+let EFFECTIVE_NUMBER_MODELS = DEFAULT_NUMBER_MODELS;
+let EFFECTIVE_ZODIAC_MODELS = DEFAULT_ZODIAC_MODELS;
+if (PUSHED_CONFIG) {
+  if (Array.isArray(PUSHED_CONFIG.number) && PUSHED_CONFIG.number.length > 0) {
+    EFFECTIVE_NUMBER_MODELS = PUSHED_CONFIG.number.map(m => {
+      const def = DEFAULT_NUMBER_MODELS.find(d => d.id === m.id);
+      return { id: m.id, name: (def ? def.name : GENERIC_ALGO_NAMES[m.id]) || m.id, weight: m.weight };
+    });
+  }
+  if (Array.isArray(PUSHED_CONFIG.zodiac) && PUSHED_CONFIG.zodiac.length > 0) {
+    EFFECTIVE_ZODIAC_MODELS = PUSHED_CONFIG.zodiac.map(m => {
+      const def = DEFAULT_ZODIAC_MODELS.find(d => d.id === m.id);
+      return { id: m.id, name: (def ? def.name : GENERIC_ALGO_NAMES[m.id]) || m.id, weight: m.weight };
+    });
+  }
+}
+
+// 头数/尾数/五行：若推送配置存在，转为带权重的对象数组；否则保持字符串 ID 数组
+let HEAD_MODELS = DEFAULT_HEAD_MODELS;
+let TAIL_MODELS = DEFAULT_TAIL_MODELS;
+let ELEMENT_MODELS = DEFAULT_ELEMENT_MODELS;
+if (PUSHED_CONFIG) {
+  if (Array.isArray(PUSHED_CONFIG.head) && PUSHED_CONFIG.head.length > 0) {
+    HEAD_MODELS = PUSHED_CONFIG.head.map(m => normalizeWeighted(m.id, m.weight));
+  }
+  if (Array.isArray(PUSHED_CONFIG.tail) && PUSHED_CONFIG.tail.length > 0) {
+    TAIL_MODELS = PUSHED_CONFIG.tail.map(m => normalizeWeighted(m.id, m.weight));
+  }
+  if (Array.isArray(PUSHED_CONFIG.element) && PUSHED_CONFIG.element.length > 0) {
+    ELEMENT_MODELS = PUSHED_CONFIG.element.map(m => normalizeWeighted(m.id, m.weight));
+  }
+}
 
 module.exports = {
   ZODIACS,
@@ -202,15 +237,19 @@ module.exports = {
   LICHUN_DATES,
   DEFAULT_NUMBER_MODELS,
   DEFAULT_ZODIAC_MODELS,
+  EFFECTIVE_NUMBER_MODELS,
+  EFFECTIVE_ZODIAC_MODELS,
   COLOR_MODELS,
   SIZE_MODELS,
   PARITY_MODELS,
   HEAD_MODELS,
-  HEAD_CATEGORIES,
   TAIL_MODELS,
-  TAIL_CATEGORIES,
   ELEMENT_MODELS,
+  HEAD_CATEGORIES,
+  TAIL_CATEGORIES,
   ELEMENT_CATEGORIES,
+  GENERIC_ALGO_NAMES,
+  PUSHED_CONFIG,
   getLichunDate,
   getLunarZodiacYear,
   getZodiacByDate,

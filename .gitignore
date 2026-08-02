@@ -6,3 +6,22 @@ out/
 nul
 release/
 release34/
+
+# 运行时缓存与打包产物
+data/
+locales/
+resources/
+*.pak
+*.dll
+*.bin
+icudtl.dat
+snapshot_blob.v8.snapshot
+snapshot_blob.bin
+v8_context_snapshot.bin
+vulkan-1.dll
+vk_swiftshader.dll
+vk_swiftshader_icd.json
+LICENSE.electron.txt
+LICENSES.chromium.html
+六合彩特码预测系统.exe
+Uninstall 六合彩特码预测系统.exe

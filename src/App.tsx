@@ -5,30 +5,28 @@ import { ModelProvider } from './stores/ModelContext';
 import { FunnelProvider } from './stores/FunnelContext';
 import { PredictionHistoryProvider } from './stores/PredictionHistoryContext';
 import { SeparatedModelProvider } from './stores/SeparatedModelContext';
+import { ModelLibraryProvider } from './stores/ModelLibraryContext';
 import Dashboard from './components/Dashboard';
 import SeparatedPredictionPanel from './components/SeparatedPredictionPanel';
+import DynamicPrediction from './components/DynamicPrediction';
 import History from './components/History';
 import Analysis from './components/Analysis';
 import Config from './components/Config';
 import StartupStatus from './components/StartupStatus';
-import { LayoutDashboard, Clock, BarChart3, Settings, Zap, CheckCircle, Brain } from 'lucide-react';
+import { LayoutDashboard, Clock, BarChart3, Settings, Zap, CheckCircle, Brain, Layers } from 'lucide-react';
 
-type Tab = 'dashboard' | 'predict' | 'history' | 'analysis' | 'config';
+type Tab = 'dashboard' | 'predict' | 'dynamic' | 'history' | 'analysis' | 'config';
 
 function AppInner() {
   const { data } = useData();
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-  const [flashMessage, setFlashMessage] = useState('');
+  const [flashMessage] = useState('');
   const [backendReady, setBackendReady] = useState(false);
-
-  const onFlash = (msg: string) => {
-    setFlashMessage(msg);
-    setTimeout(() => setFlashMessage(''), 3000);
-  };
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'dashboard', label: '数据总览', icon: <LayoutDashboard className="w-4 h-4" /> },
     { key: 'predict', label: '智能预测', icon: <Zap className="w-4 h-4" /> },
+    { key: 'dynamic', label: '动态预测', icon: <Layers className="w-4 h-4" /> },
     { key: 'history', label: '历史数据', icon: <Clock className="w-4 h-4" /> },
     { key: 'analysis', label: '统计分析', icon: <BarChart3 className="w-4 h-4" /> },
     { key: 'config', label: '系统配置', icon: <Settings className="w-4 h-4" /> },
@@ -95,6 +93,7 @@ function AppInner() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {activeTab === 'dashboard' && <Dashboard data={data} />}
         {activeTab === 'predict' && <SeparatedPredictionPanel />}
+        {activeTab === 'dynamic' && <DynamicPrediction />}
         {activeTab === 'history' && <History />}
         {activeTab === 'analysis' && <Analysis data={data} />}
         {activeTab === 'config' && <Config />}
@@ -124,7 +123,9 @@ export default function App() {
           <FunnelProvider>
             <PredictionHistoryProvider>
               <SeparatedModelProvider>
-                <AppInner />
+                <ModelLibraryProvider>
+                  <AppInner />
+                </ModelLibraryProvider>
               </SeparatedModelProvider>
             </PredictionHistoryProvider>
           </FunnelProvider>

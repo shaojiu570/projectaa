@@ -161,7 +161,7 @@ export function extractDataFromYear(html: string, year: number): LotteryRecord[]
       const balls = block.match(/<dt[^>]*class="ball-[^"]*"[^>]*>(\d+)<\/dt>/g);
       if (!balls || balls.length < 7) continue;
 
-      const nums = balls.map(b => parseInt(b.match(/>(\d+)<\/dt>/)[1]));
+      const nums = balls.map(b => parseInt(b.match(/>(\d+)<\/dt>/)![1]));
       if (nums.length >= 7) {
         draws.push({
           Date: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,

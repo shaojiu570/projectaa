@@ -3,18 +3,20 @@
  * 头数/尾数/五行使用独立模型计算（同步自前端）
  */
 
-const { ZODIACS, DEFAULT_NUMBER_MODELS, DEFAULT_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, HEAD_MODELS, HEAD_CATEGORIES, TAIL_MODELS, TAIL_CATEGORIES, ELEMENT_MODELS, ELEMENT_CATEGORIES } = require('./constants.cjs');
+const { ZODIACS, EFFECTIVE_NUMBER_MODELS, EFFECTIVE_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, HEAD_MODELS, HEAD_CATEGORIES, TAIL_MODELS, TAIL_CATEGORIES, ELEMENT_MODELS, ELEMENT_CATEGORIES } = require('./constants.cjs');
 const { simulateNumberModel, simulateZodiacModel, simulateColorModel, simulateSizeModel, simulateParityModel, simulateHeadModel, simulateTailModel, simulateElementModel } = require('./models.cjs');
-const { getZodiac } = require('./utils.cjs');
+const { getZodiac, getElement } = require('./utils.cjs');
 
 /**
  * 多模型融合（对应前端的 m0 函数）
  */
-function fuseModels(data, baseSeed, modelIds, modelFn, categories, seedOffset) {
-  const outputs = modelIds.map((id, i) => ({
-    probs: modelFn(id, data, baseSeed + seedOffset + i * 1000),
-    weight: 1 / modelIds.length,
-  }));
+function fuseModels(data, baseSeed, modelConfigs, modelFn, categories, seedOffset) {
+  const totalWeight = modelConfigs.reduce((s, mc) => s + (typeof mc === 'string' ? 1 : (mc.weight || 0)), 0);
+  const outputs = modelConfigs.map((mc, i) => {
+    const id = typeof mc === 'string' ? mc : mc.id;
+    const weight = typeof mc === 'string' ? 1 / modelConfigs.length : (totalWeight > 0 ? mc.weight / totalWeight : 1 / modelConfigs.length);
+    return { probs: modelFn(id, data, baseSeed + seedOffset + i * 1000), weight };
+  });
 
   const fused = {};
   categories.forEach(c => fused[c] = 0);
@@ -33,55 +35,69 @@ function fuseModels(data, baseSeed, modelIds, modelFn, categories, seedOffset) {
     .map((item, i) => ({ ...item, rank: i + 1 }));
 }
 
+// 各类型自适应权重的命中判定 TopN
+const TOPN = { number: 30, zodiac: 9, head: 4, tail: 8, element: 4 };
+
 /**
- * 计算自适应权重
+ * 判断模型在某一期（test）是否命中：用 train（该期之前的数据）预测，取 TopN 看是否包含实际开奖
+ */
+function modelHitsAt(id, train, seed, test, type) {
+  if (type === 'number') {
+    const probs = simulateNumberModel(id, train, seed);
+    const top = probs.map((p, i) => ({ n: i + 1, p })).sort((a, b) => b.p - a.p).slice(0, TOPN.number).map(x => x.n);
+    return top.includes(test.special);
+  }
+  if (type === 'zodiac') {
+    const probs = simulateZodiacModel(id, train, seed + 10000);
+    const top = Object.entries(probs).sort((a, b) => b[1] - a[1]).slice(0, TOPN.zodiac).map(x => x[0]);
+    return top.includes(getZodiac(test.special, new Date().getFullYear()));
+  }
+  if (type === 'head') {
+    const probs = simulateHeadModel(id, train, seed);
+    const top = Object.entries(probs).sort((a, b) => b[1] - a[1]).slice(0, TOPN.head).map(x => x[0]);
+    return top.includes(Math.floor((test.special - 1) / 10).toString() + '头');
+  }
+  if (type === 'tail') {
+    const probs = simulateTailModel(id, train, seed);
+    const top = Object.entries(probs).sort((a, b) => b[1] - a[1]).slice(0, TOPN.tail).map(x => x[0]);
+    return top.includes((test.special % 10).toString() + '尾');
+  }
+  if (type === 'element') {
+    const probs = simulateElementModel(id, train, seed);
+    const top = Object.entries(probs).sort((a, b) => b[1] - a[1]).slice(0, TOPN.element).map(x => x[0]);
+    return top.includes(getElement(test.special, new Date().getFullYear()));
+  }
+  return false;
+}
+
+/**
+ * 计算自适应权重：每 10 期根据各模型命中情况调整模型权重
+ * 对最近 WINDOW=10 期逐期样本外评估（训练只用该期之前的数据），
+ * 统计每个模型 TopN 是否命中实际开奖 → softmax 放大命中率 → 归一化为权重。
+ * 数据不足 10 期时回退为推送/默认权重。
  */
 function computeAdaptiveWeights(data, models, type) {
-  if (models.length === 0 || data.length < 30) {
+  const WINDOW = 10;
+  if (models.length === 0 || data.length < WINDOW + 1) {
     return models.map(m => ({ id: m.id, weight: m.weight }));
   }
 
-  const evalData = data.slice(-60);
-  const windowSize = 15;
-  const allScores = models.map(m => ({ id: m.id, scores: [] }));
+  const testStart = data.length - WINDOW;
+  const hits = {};
+  models.forEach(m => hits[m.id] = 0);
 
-  for (let si = 0; si <= evalData.length - windowSize - 1; si += 2) {
-    const train = evalData.slice(si, si + windowSize);
-    const test = evalData[si + windowSize];
-    if (!test) continue;
-
-    for (const m of models) {
-      const ls = train[train.length - 1]?.issue || '0';
-      const seed = ls.split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
-      let hit = false;
-
-      if (type === 'number') {
-        const probs = simulateNumberModel(m.id, train, seed);
-        const top38 = probs.map((p, i) => ({ n: i + 1, p }))
-          .sort((a, b) => b.p - a.p)
-          .slice(0, 38)
-          .map(x => x.n);
-        hit = top38.includes(test.special);
-      } else {
-        const probs = simulateZodiacModel(m.id, train, seed + 10000);
-        const top9 = Object.entries(probs)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 9)
-          .map(x => x[0]);
-        hit = top9.includes(getZodiac(test.special, new Date().getFullYear()));
-      }
-
-      const ex = allScores.find(s => s.id === m.id);
-      if (ex) ex.scores.push(hit ? 1 : 0);
-    }
+  for (let pi = testStart; pi < data.length; pi++) {
+    const train = data.slice(0, pi);
+    const test = data[pi];
+    if (train.length === 0) continue;
+    const ls = train[train.length - 1]?.issue || '0';
+    const seed = ls.split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
+    models.forEach((m, i) => {
+      if (modelHitsAt(m.id, train, seed + i * 1000, test, type)) hits[m.id]++;
+    });
   }
 
-  const modelScores = allScores.map(m => ({
-    id: m.id,
-    avgScore: Math.max(0.01, m.scores.reduce((a, b) => a + b, 0) / (m.scores.length || 1))
-  }));
-
-  const expScores = modelScores.map(m => ({ id: m.id, exp: Math.exp(m.avgScore * 5) }));
+  const expScores = models.map(m => ({ id: m.id, exp: Math.exp((hits[m.id] / WINDOW) * 5) }));
   const totalExp = expScores.reduce((s, m) => s + m.exp, 0);
 
   return expScores.map(m => ({ id: m.id, weight: m.exp / totalExp }));
@@ -95,9 +111,9 @@ function runPrediction(data) {
   const baseSeed = lastIssue.split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
 
   // ==================== 号码预测 ====================
-  const numWeights = computeAdaptiveWeights(data, DEFAULT_NUMBER_MODELS, 'number');
+  const numWeights = computeAdaptiveWeights(data, EFFECTIVE_NUMBER_MODELS, 'number');
   const numTotal = numWeights.reduce((s, m) => s + m.weight, 0);
-  const numOutputs = DEFAULT_NUMBER_MODELS.map(m => ({
+  const numOutputs = EFFECTIVE_NUMBER_MODELS.map(m => ({
     probs: simulateNumberModel(m.id, data, baseSeed),
     weight: (numWeights.find(w => w.id === m.id)?.weight || 0) / numTotal,
   }));
@@ -112,15 +128,15 @@ function runPrediction(data) {
     .sort((a, b) => b.prob - a.prob);
 
   const numberPreds = {
-    level1: numCands.slice(0, 38),
+    level1: numCands.slice(0, 30),
     level2: numCands.slice(0, 23),
     level3: numCands.slice(0, 10),
   };
 
   // ==================== 生肖预测 ====================
-  const zodWeights = computeAdaptiveWeights(data, DEFAULT_ZODIAC_MODELS, 'zodiac');
+  const zodWeights = computeAdaptiveWeights(data, EFFECTIVE_ZODIAC_MODELS, 'zodiac');
   const zodTotal = zodWeights.reduce((s, m) => s + m.weight, 0);
-  const zodOutputs = DEFAULT_ZODIAC_MODELS.map(m => ({
+  const zodOutputs = EFFECTIVE_ZODIAC_MODELS.map(m => ({
     probs: simulateZodiacModel(m.id, data, baseSeed + 10000),
     weight: (zodWeights.find(w => w.id === m.id)?.weight || 0) / zodTotal,
   }));
@@ -200,16 +216,19 @@ function runPrediction(data) {
     level2: parCands.slice(0, 1),
   };
 
-  // ==================== 头数预测（独立模型） ====================
-  const headResult = fuseModels(data, baseSeed, HEAD_MODELS, simulateHeadModel, HEAD_CATEGORIES, 5000);
+  // ==================== 头数预测（独立模型，每10期自适应权重） ====================
+  const headWeights = computeAdaptiveWeights(data, HEAD_MODELS, 'head');
+  const headResult = fuseModels(data, baseSeed, headWeights, simulateHeadModel, HEAD_CATEGORIES, 5000);
   const headPreds = headResult.slice(0, 4).map((item, i) => ({ ...item, rank: i + 1 }));
 
-  // ==================== 尾数预测（独立模型） ====================
-  const tailResult = fuseModels(data, baseSeed, TAIL_MODELS, simulateTailModel, TAIL_CATEGORIES, 6000);
+  // ==================== 尾数预测（独立模型，每10期自适应权重） ====================
+  const tailWeights = computeAdaptiveWeights(data, TAIL_MODELS, 'tail');
+  const tailResult = fuseModels(data, baseSeed, tailWeights, simulateTailModel, TAIL_CATEGORIES, 6000);
   const tailPreds = tailResult.slice(0, 8).map((item, i) => ({ ...item, rank: i + 1 }));
 
-  // ==================== 五行预测（独立模型） ====================
-  const elementResult = fuseModels(data, baseSeed, ELEMENT_MODELS, simulateElementModel, ELEMENT_CATEGORIES, 7000);
+  // ==================== 五行预测（独立模型，每10期自适应权重） ====================
+  const elementWeights = computeAdaptiveWeights(data, ELEMENT_MODELS, 'element');
+  const elementResult = fuseModels(data, baseSeed, elementWeights, simulateElementModel, ELEMENT_CATEGORIES, 7000);
   const elementPreds = elementResult.slice(0, 4).map((item, i) => ({ ...item, rank: i + 1 }));
 
   // ==================== 综合推荐 ====================

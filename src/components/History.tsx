@@ -4,12 +4,16 @@ import { useMapping } from '../stores/MappingContext';
 import DataManager from './history/DataManager';
 import FilterPanel from './history/FilterPanel';
 import DataTable from './history/DataTable';
+import CrawlerPanel from './crawler/CrawlerPanel';
 
 const PAGE_SIZE = 20;
 
 export default function History() {
   const { data, removeRecord, removeRecords } = useData();
   const { getZodiac, getColor, getElement, getZodiacByDateAndNumber } = useMapping();
+
+  const [subTab, setSubTab] = useState<'data' | 'crawler'>('data');
+  const [flashMsg, setFlashMsg] = useState('');
 
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
@@ -66,40 +70,80 @@ export default function History() {
     setSelectedIssues(newSet);
   };
 
+  const onFlash = (msg: string) => {
+    setFlashMsg(msg);
+    setTimeout(() => setFlashMsg(''), 3000);
+  };
+
   return (
     <div className="space-y-4">
-      <DataManager />
+      <div className="flex gap-2">
+        <button
+          onClick={() => setSubTab('data')}
+          className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+            subTab === 'data'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'bg-white text-gray-500 border border-gray-100 hover:bg-gray-50'
+          }`}
+        >
+          📊 数据查看
+        </button>
+        <button
+          onClick={() => setSubTab('crawler')}
+          className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+            subTab === 'crawler'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'bg-white text-gray-500 border border-gray-100 hover:bg-gray-50'
+          }`}
+        >
+          🌐 数据爬取
+        </button>
+      </div>
 
-      <FilterPanel
-        search={search}
-        setSearch={setSearch}
-        filterZodiac={filterZodiac}
-        setFilterZodiac={setFilterZodiac}
-        filterColor={filterColor}
-        setFilterColor={setFilterColor}
-        setPage={setPage}
-        totalCount={data.length}
-      />
+      {flashMsg && (
+        <div className="bg-green-100 text-green-700 p-3 rounded-lg text-sm flex items-center gap-2">
+          {flashMsg}
+        </div>
+      )}
 
-      <DataTable
-        pageData={pageData}
-        page={page}
-        setPage={setPage}
-        totalPages={totalPages}
-        totalFiltered={filtered.length}
-        getZodiac={getZodiac}
-        getColor={getColor}
-        getElement={getElement}
-        getZodiacByDateAndNumber={getZodiacByDateAndNumber}
-        removeRecord={removeRecord}
-        selectedIssues={selectedIssues}
-        setSelectedIssues={setSelectedIssues}
-        expandedIssue={expandedIssue}
-        setExpandedIssue={setExpandedIssue}
-        toggleSelect={toggleSelect}
-        toggleSelectAll={toggleSelectAll}
-        handleBatchDelete={handleBatchDelete}
-      />
+      {subTab === 'data' ? (
+        <>
+          <DataManager />
+
+          <FilterPanel
+            search={search}
+            setSearch={setSearch}
+            filterZodiac={filterZodiac}
+            setFilterZodiac={setFilterZodiac}
+            filterColor={filterColor}
+            setFilterColor={setFilterColor}
+            setPage={setPage}
+            totalCount={data.length}
+          />
+
+          <DataTable
+            pageData={pageData}
+            page={page}
+            setPage={setPage}
+            totalPages={totalPages}
+            totalFiltered={filtered.length}
+            getZodiac={getZodiac}
+            getColor={getColor}
+            getElement={getElement}
+            getZodiacByDateAndNumber={getZodiacByDateAndNumber}
+            removeRecord={removeRecord}
+            selectedIssues={selectedIssues}
+            setSelectedIssues={setSelectedIssues}
+            expandedIssue={expandedIssue}
+            setExpandedIssue={setExpandedIssue}
+            toggleSelect={toggleSelect}
+            toggleSelectAll={toggleSelectAll}
+            handleBatchDelete={handleBatchDelete}
+          />
+        </>
+      ) : (
+        <CrawlerPanel onFlash={onFlash} />
+      )}
     </div>
   );
 }

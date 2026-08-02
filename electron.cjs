@@ -402,6 +402,83 @@ function startBackend() {
         return;
       }
       
+      // 模型配置推送接口 - 写入自动发送脚本的 config.json
+      if (pathname === '/api/models/push' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+          try {
+            const { config, targetPath, repoPath, autoGit } = JSON.parse(body);
+            const fs = require('fs');
+            const repoFile = repoPath ? path.join(repoPath, 'scripts', 'predictor', 'config.json') : null;
+            const candidates = [
+              repoFile,
+              targetPath,
+              path.join(__dirname, 'scripts', 'predictor', 'config.json'),
+              path.join(process.cwd(), 'scripts', 'predictor', 'config.json'),
+            ].filter(Boolean);
+            let written = null;
+            let lastError = null;
+            for (const p of candidates) {
+              try {
+                fs.mkdirSync(path.dirname(p), { recursive: true });
+                fs.writeFileSync(p, JSON.stringify(config, null, 2), 'utf-8');
+                written = p;
+                break;
+              } catch (e) {
+                lastError = e;
+              }
+            }
+            if (!written) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, message: '写入失败：' + (lastError ? lastError.message : '目录不可写') + '。请手动将配置保存为 scripts/predictor/config.json' }));
+              return;
+            }
+            // 可选：git 自动提交 + 推送（仅提交 config.json 这一个文件）
+            if (autoGit && repoPath && written === repoFile) {
+              const { execFile } = require('child_process');
+              const execGit = (args) => new Promise((resolve) => {
+                execFile('git', args, { cwd: repoPath, timeout: 60000 }, (err, stdout, stderr) => {
+                  resolve({ ok: !err, stdout: String(stdout || ''), stderr: String(stderr || '') });
+                });
+              });
+              (async () => {
+                const logs = [];
+                const add = await execGit(['add', 'scripts/predictor/config.json']);
+                logs.push('add:' + (add.ok ? 'ok' : 'fail'));
+                const commit = await execGit(['commit', '-m', 'chore: 更新预测模型配置']);
+                const nothingToCommit = /nothing to commit/i.test(commit.stdout + commit.stderr);
+                logs.push('commit:' + (commit.ok || nothingToCommit ? 'ok' : 'fail'));
+                let pushMsg = '';
+                if (commit.ok || nothingToCommit) {
+                  const push = await execGit(['push']);
+                  if (push.ok) {
+                    pushMsg = '已提交并推送';
+                  } else {
+                    pushMsg = 'push 失败: ' + ((push.stderr || push.stdout).trim().split('\n')[0] || '未知错误');
+                  }
+                } else {
+                  pushMsg = 'commit 失败: ' + ((commit.stderr || commit.stdout).trim().split('\n')[0] || '未知错误');
+                }
+                const ok = pushMsg.indexOf('失败') === -1;
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: ok, data: { path: written, git: logs }, message: ok ? ('已写入并推送: ' + written) : ('已写入: ' + written + '；' + pushMsg) }));
+              })().catch((error) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'git 操作异常: ' + error.message }));
+              });
+              return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, data: { path: written }, message: '模型配置已推送: ' + written }));
+          } catch (error) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, message: '推送失败: ' + error.message }));
+          }
+        });
+        return;
+      }
+      
       // 404
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));

@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useMemo, ReactNode, u
 import {
   ZODIAC_NUMBERS as DEFAULT_ZODIAC_NUMBERS,
   COLOR_NUMBERS as DEFAULT_COLOR_NUMBERS,
-  YEAR_ELEMENTS, ELEMENTS,
+  YEAR_ELEMENTS,
 } from '../constants';
 import { saveToStorage, loadFromStorage } from '../utils/storage';
 import { getZodiacByDate as getZodiacByDateUtil, getYearZodiacMapping } from '../utils/lunarCalendar';

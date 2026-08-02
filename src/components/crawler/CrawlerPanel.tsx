@@ -34,7 +34,6 @@ export default function CrawlerPanel({ onFlash }: CrawlerPanelProps) {
     const savedUrls = saved ? JSON.parse(saved) : DEFAULT_URLS;
     return savedUrls[0]?.id || '1';
   });
-  const [year, setYear] = useState(new Date().getFullYear());
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
 
   const [showUrlEditor, setShowUrlEditor] = useState(false);
@@ -144,7 +143,7 @@ export default function CrawlerPanel({ onFlash }: CrawlerPanelProps) {
       }
 
       if (html) {
-        const records = parseHtmlToRecords(html, y);
+        const records = parseHtmlToRecords(html);
         allRecords = [...allRecords, ...records];
         onFlash(`成功获取 ${y} 年 ${records.length} 期 (${usedSource})`);
       }
@@ -164,7 +163,7 @@ export default function CrawlerPanel({ onFlash }: CrawlerPanelProps) {
     setCrawling(false);
   };
 
-  function parseHtmlToRecords(html: string, targetYear: number) {
+  function parseHtmlToRecords(html: string) {
     const records: any[] = [];
 
     const cleanHtml = html.replace(/\r\n/g, '').replace(/\n/g, '');
@@ -207,21 +206,6 @@ export default function CrawlerPanel({ onFlash }: CrawlerPanelProps) {
     records.sort((a: any, b: any) => a.date.localeCompare(b.date));
 
     return records;
-  }
-
-  function generateDate(year: number, index: number, total: number) {
-    const monthLengths = [31,28,31,30,31,30,31,31,30,31,30,31];
-    let remaining = index;
-
-    for (let m = 1; m <= 12; m++) {
-      const days = monthLengths[m-1];
-      if (remaining < days) {
-        return `${year}-${String(m).padStart(2,'0')}-${String(remaining+1).padStart(2,'0')}`;
-      }
-      remaining -= days;
-    }
-
-    return `${year}-12-31`;
   }
 
   const handleAddUrl = () => {

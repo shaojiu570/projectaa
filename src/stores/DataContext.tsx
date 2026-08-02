@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect, useRef } from 'react';
 import { DrawRecord } from '../data/types';
 import { completeHistoricalData } from '../data/historicalData';
 import { saveToStorage, loadFromStorage } from '../utils/storage';
@@ -12,7 +12,7 @@ interface DataCtx {
   removeRecords: (issues: string[]) => void;
   resetData: () => void;
   clearAllData: () => void;
-  syncFromBackend: () => Promise<void>;
+  syncFromBackend: () => Promise<DrawRecord[]>;
 }
 
 const Ctx = createContext<DataCtx | null>(null);
@@ -30,18 +30,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const syncFromBackend = useCallback(async () => {
     const convertedData = await syncFromBackendService();
     if (convertedData.length > 0) {
+      const hasRealData = convertedData.some(d => parseInt(d.date.slice(0, 4)) >= 2023);
       setData(prev => {
-        const hasRealData = convertedData.some(d => parseInt(d.date.slice(0, 4)) >= 2023);
         const filteredPrev = hasRealData ? prev.filter(d => parseInt(d.date.slice(0, 4)) >= 2023) : prev;
         const combined = [...filteredPrev, ...convertedData];
         const uniqueMap = new Map(combined.map(item => [item.issue, item]));
+        console.log(`成功同步 ${convertedData.length} 条数据`);
         return Array.from(uniqueMap.values()).sort((a, b) => a.date.localeCompare(b.date));
       });
-      console.log(`成功从后端同步 ${convertedData.length} 条数据`);
+      return convertedData;
     }
+    return [];
   }, [setData]);
 
+  const initialSyncDone = useRef(false);
   useEffect(() => {
+    if (initialSyncDone.current) return;
+    initialSyncDone.current = true;
     syncFromBackend();
   }, [syncFromBackend]);
 

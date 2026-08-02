@@ -4,7 +4,7 @@
  */
 
 const crypto = require('crypto');
-const { DEFAULT_NUMBER_MODELS, DEFAULT_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, HEAD_MODELS, TAIL_MODELS, ELEMENT_MODELS } = require('./constants.cjs');
+const { EFFECTIVE_NUMBER_MODELS, EFFECTIVE_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, HEAD_MODELS, TAIL_MODELS, ELEMENT_MODELS } = require('./constants.cjs');
 
 // 从环境变量读取配置
 const CONFIG = {
@@ -229,7 +229,7 @@ function formatMessage(pred, data) {
     `【六合彩预测】第${nextIssue}期 (${dateStr})`,
     `基于第${lastIssueNum}期数据`,
     '',
-    `📊 号码第一层（38个）：`,
+    `📊 号码第一层（30个）：`,
     pred.numbers.level1.map(r => String(r.number).padStart(2, '0')).join(' '),
     '',
     `🐲 生肖第一层（9个）：`,
@@ -244,7 +244,7 @@ function formatMessage(pred, data) {
     `最近5期`,
     ...last5.map(r => `> ${r.issue.slice(-3)}期 ${r.special} ${getZodiac(r.special, year)} ${getColor(r.special)}`),
     '',
-    `_${formatDate(new Date())} | ${data.length}期数据 | ${DEFAULT_NUMBER_MODELS.length + DEFAULT_ZODIAC_MODELS.length + COLOR_MODELS.length + SIZE_MODELS.length + PARITY_MODELS.length + HEAD_MODELS.length + TAIL_MODELS.length + ELEMENT_MODELS.length}个模型_`,
+    `_${formatDate(new Date())} | ${data.length}期数据 | ${EFFECTIVE_NUMBER_MODELS.length + EFFECTIVE_ZODIAC_MODELS.length + COLOR_MODELS.length + SIZE_MODELS.length + PARITY_MODELS.length + HEAD_MODELS.length + TAIL_MODELS.length + ELEMENT_MODELS.length}个模型_`,
   ];
 
   return lines.join('\n');

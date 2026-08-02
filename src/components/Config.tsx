@@ -4,7 +4,6 @@ import {
   ZODIACS
 } from '../constants/index';
 import { Settings, Save, RotateCcw, Globe, Shield, LayoutGrid, Calendar, Info, CheckCircle, Sliders, Brain } from 'lucide-react';
-import CrawlerPanel from './crawler/CrawlerPanel';
 
 const ZODIAC_EMOJI: Record<string, string> = {
   '鼠':'🐭','牛':'🐮','虎':'🐯','兔':'🐰','龙':'🐲','蛇':'🐍',
@@ -12,7 +11,7 @@ const ZODIAC_EMOJI: Record<string, string> = {
 };
 
 export default function Config() {
-  const [activeTab, setActiveTab] = useState<'system' | 'mapping' | 'year' | 'crawler' | 'model' | 'feature' | 'training'>('system');
+  const [activeTab, setActiveTab] = useState<'system' | 'mapping' | 'year' | 'model' | 'feature' | 'training'>('system');
   const [systemConfig, setSystemConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -21,12 +20,10 @@ export default function Config() {
   // Mapping Context
   const {
     currentYear, setCurrentYear,
-    yearZodiacMaps,
     zodiacNumbers, setZodiacNumbers,
     colorNumbers, setColorNumbers,
     elementNumbers, setElementNumbers,
     resetMappings,
-    updateYearZodiacMap,
   } = useMapping();
 
   // Local editing states for mapping tables
@@ -115,7 +112,6 @@ export default function Config() {
 
   const tabs: { key: typeof activeTab; label: string; icon: any }[] = [
     { key: 'system', label: '系统设置', icon: Settings },
-    { key: 'crawler', label: '数据爬取', icon: Globe },
     { key: 'mapping', label: '生肖映射', icon: LayoutGrid },
     { key: 'year', label: '年份设置', icon: Calendar },
   ];
@@ -230,8 +226,6 @@ export default function Config() {
             </div>
           </div>
         )}
-
-        {activeTab === 'crawler' && <CrawlerPanel onFlash={onFlash} />}
 
         {activeTab === 'mapping' && (
           <div className="space-y-6">
