@@ -1,0 +1,152 @@
+{
+  "number": [
+    {
+      "id": "lstm",
+      "weight": 0.15
+    },
+    {
+      "id": "xgboost",
+      "weight": 0.1
+    },
+    {
+      "id": "cycle",
+      "weight": 0.1
+    },
+    {
+      "id": "markov",
+      "weight": 0.1
+    },
+    {
+      "id": "ma",
+      "weight": 0.1
+    },
+    {
+      "id": "rf",
+      "weight": 0.1
+    },
+    {
+      "id": "hot",
+      "weight": 0.1
+    },
+    {
+      "id": "cold",
+      "weight": 0.1
+    },
+    {
+      "id": "rl",
+      "weight": 0.1
+    }
+  ],
+  "zodiac": [
+    {
+      "id": "ma",
+      "weight": 0.1
+    },
+    {
+      "id": "markov",
+      "weight": 0.1
+    },
+    {
+      "id": "condProb",
+      "weight": 0.1
+    },
+    {
+      "id": "bayes",
+      "weight": 0.1
+    },
+    {
+      "id": "lstm",
+      "weight": 0.1
+    },
+    {
+      "id": "hot",
+      "weight": 0.1
+    },
+    {
+      "id": "bandit",
+      "weight": 0.1
+    },
+    {
+      "id": "rf",
+      "weight": 0.1
+    }
+  ],
+  "head": [
+    {
+      "id": "markov",
+      "weight": 0.1
+    },
+    {
+      "id": "ma",
+      "weight": 0.1
+    },
+    {
+      "id": "rf",
+      "weight": 0.1
+    },
+    {
+      "id": "xgboost",
+      "weight": 0.1
+    },
+    {
+      "id": "lstm",
+      "weight": 0.1
+    }
+  ],
+  "tail": [
+    {
+      "id": "hot",
+      "weight": 0.1
+    },
+    {
+      "id": "cold",
+      "weight": 0.1
+    },
+    {
+      "id": "cycle",
+      "weight": 0.1
+    },
+    {
+      "id": "markov",
+      "weight": 0.1
+    },
+    {
+      "id": "condProb",
+      "weight": 0.1
+    },
+    {
+      "id": "xgboost",
+      "weight": 0.1
+    },
+    {
+      "id": "lstm",
+      "weight": 0.1
+    }
+  ],
+  "element": [
+    {
+      "id": "lstm",
+      "weight": 0.1
+    },
+    {
+      "id": "xgboost",
+      "weight": 0.1
+    },
+    {
+      "id": "rf",
+      "weight": 0.1
+    },
+    {
+      "id": "bayes",
+      "weight": 0.1
+    },
+    {
+      "id": "condProb",
+      "weight": 0.1
+    },
+    {
+      "id": "markov",
+      "weight": 0.1
+    }
+  ]
+}
