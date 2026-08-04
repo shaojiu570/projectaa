@@ -6,7 +6,7 @@
 // 生肖列表
 const ZODIACS = ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪'];
 
-// 波色映射（固定不变）
+// 波色映射（固定不变，仅用于号码展示）
 const COLOR_NUMBERS = {
   '红波': [1, 2, 7, 8, 12, 13, 18, 19, 23, 24, 29, 30, 34, 35, 40, 45, 46],
   '蓝波': [3, 4, 9, 10, 14, 15, 20, 25, 26, 31, 36, 37, 41, 42, 47, 48],
@@ -92,11 +92,34 @@ function getYearZodiacMapping(year) {
 
 /**
  * 根据年份获取号码对应的生肖
+ * year 应为农历生肖年份（立春后该公历年为当年，立春前为前一年）
  */
 function getZodiacByNumber(num, year) {
   const mapping = getYearZodiacMapping(year);
   for (const [zodiac, numbers] of Object.entries(mapping)) {
     if (numbers.includes(num)) return zodiac;
+  }
+  return '未知';
+}
+
+/**
+ * 按开奖记录动态映射生肖（立春/农历年）
+ */
+function getZodiacByRecord(record) {
+  const date = new Date(record.date);
+  const lunarYear = getLunarZodiacYear(date);
+  return getZodiacByNumber(record.special, lunarYear);
+}
+
+/**
+ * 按年份获取号码对应的五行（公历日历年）
+ */
+function getElementByYear(num, year) {
+  const y = year || new Date().getFullYear();
+  const yearData = YEAR_ELEMENTS[y];
+  if (!yearData) return '未知';
+  for (const [element, nums] of Object.entries(yearData)) {
+    if (nums.includes(num)) return element;
   }
   return '未知';
 }
@@ -156,7 +179,7 @@ const YEAR_ELEMENTS = {
   },
 };
 
-// 通用算法（统一模型库，可预测任意分类类型：号码/生肖/头/尾/五行）
+// 通用算法（统一模型库，可预测任意分类类型：号码/生肖/头/尾/五行/自定义）
 const GENERIC_ALGO_NAMES = {
   hot: '热度', cold: '遗漏', cycle: '周期', markov: '马尔科夫', ma: '移动平均',
   condProb: '条件概率', bayes: '贝叶斯', apriori: 'Apriori',
@@ -164,27 +187,75 @@ const GENERIC_ALGO_NAMES = {
   genetic: '遗传算法', rl: '强化学习', bandit: '多臂老虎机',
 };
 
-function defaultGenericModels(weight = 0.1) {
-  return Object.keys(GENERIC_ALGO_NAMES).map(id => ({ id, name: GENERIC_ALGO_NAMES[id], weight }));
+function defaultAlgoSelections(weight = 0.1) {
+  return Object.keys(GENERIC_ALGO_NAMES).map(id => ({ id, weight }));
 }
 
-// 默认模型配置（统一模型库 = 全部通用算法；可由智能预测「推送配置」覆盖）
-const DEFAULT_NUMBER_MODELS = defaultGenericModels();
-const DEFAULT_ZODIAC_MODELS = defaultGenericModels();
+/**
+ * 无推送配置时的默认预测类型（动态预测内置类型，不含波色/单双/大小）
+ */
+function defaultTypes() {
+  const all = Array.from({ length: 49 }, (_, i) => i + 1);
+  const year = new Date().getFullYear();
+  const elMap = YEAR_ELEMENTS[year] || YEAR_ELEMENTS[2026];
+  const elems = ['金', '木', '水', '火', '土'];
+  const zodMap = getYearZodiacMapping(getLunarZodiacYear(new Date()));
+  return [
+    {
+      id: 'number', name: '号码类', enabled: true, resultCount: 30, topN: 30,
+      selectedAlgorithms: defaultAlgoSelections(), categories: all.map(String),
+      numberRanges: all.map(n => [n]), isBuiltin: true, autoWeight: false,
+    },
+    {
+      id: 'tail', name: '尾数类', enabled: true, resultCount: 8, topN: 8,
+      selectedAlgorithms: defaultAlgoSelections(),
+      categories: Array.from({ length: 10 }, (_, i) => String(i)),
+      numberRanges: Array.from({ length: 10 }, (_, i) => all.filter(n => n % 10 === i)),
+      isBuiltin: true, autoWeight: false,
+    },
+    {
+      id: 'head', name: '头数类', enabled: true, resultCount: 4, topN: 4,
+      selectedAlgorithms: defaultAlgoSelections(),
+      categories: ['0', '1', '2', '3', '4'],
+      numberRanges: [0, 1, 2, 3, 4].map(d => all.filter(n => Math.floor(n / 10) === d)),
+      isBuiltin: true, autoWeight: false,
+    },
+    {
+      id: 'element', name: '五行类', enabled: true, resultCount: 4, topN: 4,
+      selectedAlgorithms: defaultAlgoSelections(), categories: elems,
+      numberRanges: elems.map(e => elMap[e] || []), isBuiltin: true, autoWeight: false,
+    },
+    {
+      id: 'zodiac', name: '生肖类', enabled: true, resultCount: 9, topN: 9,
+      selectedAlgorithms: defaultAlgoSelections(), categories: ZODIACS,
+      numberRanges: ZODIACS.map(z => zodMap[z] || []),
+      isBuiltin: true, autoWeight: false,
+    },
+  ];
+}
 
-const COLOR_MODELS = ['color_freq', 'color_trend', 'color_pattern'];
-const SIZE_MODELS = ['size_freq', 'size_alternate'];
-const PARITY_MODELS = ['parity_freq', 'parity_trend'];
-const DEFAULT_HEAD_MODELS = defaultGenericModels();
-const HEAD_CATEGORIES = ['0头', '1头', '2头', '3头', '4头'];
-const DEFAULT_TAIL_MODELS = defaultGenericModels();
-const TAIL_CATEGORIES = ['0尾', '1尾', '2尾', '3尾', '4尾', '5尾', '6尾', '7尾', '8尾', '9尾'];
-const DEFAULT_ELEMENT_MODELS = defaultGenericModels();
-const ELEMENT_CATEGORIES = ['金', '木', '水', '火', '土'];
+/**
+ * 根据类型定义构建 开奖记录→类别 映射函数
+ * 内置生肖/五行按记录日期动态映射（生肖按立春/农历年，五行按公历日历年），
+ * 其余类型（号码/头/尾/自定义）由 categories + numberRanges 驱动。
+ */
+function buildTypeMapper(type) {
+  if (type.isBuiltin && type.id === 'zodiac') return (d) => getZodiacByRecord(d);
+  if (type.isBuiltin && type.id === 'element') return (d) => getElementByYear(d.special, new Date(d.date).getFullYear());
+  const cats = type.categories || [];
+  const ranges = type.numberRanges || [];
+  return (d) => {
+    for (let i = 0; i < cats.length; i++) {
+      if ((ranges[i] || []).includes(d.special)) return cats[i];
+    }
+    return cats[0] || '';
+  };
+}
 
 // ==================== 外部推送配置覆盖 ====================
-// 由智能预测「推送配置」生成的 config.json，替换各类型使用的模型。
-// 结构: { number:[{id,weight}], zodiac:[{id,weight}], head:[{id,weight}], tail:[{id,weight}], element:[{id,weight}] }
+// 由前端「动态预测 → 一键推送」生成的 config.json，定义脚本使用的全部预测类型。
+// 结构: { finalCount, updatedAt, types: [{ id,name,enabled,resultCount,topN,
+//   selectedAlgorithms:[{id,weight}], categories, numberRanges, isBuiltin, autoWeight }] }
 let PUSHED_CONFIG = null;
 try {
   PUSHED_CONFIG = require('./config.json');
@@ -192,67 +263,41 @@ try {
   PUSHED_CONFIG = null;
 }
 
-function normalizeWeighted(id, weight) {
-  return { id, weight };
-}
+const EFFECTIVE_TYPES = (PUSHED_CONFIG && Array.isArray(PUSHED_CONFIG.types) && PUSHED_CONFIG.types.length > 0)
+  ? PUSHED_CONFIG.types
+    .filter(t => t && t.categories && Array.isArray(t.categories))
+    .map(t => ({
+      id: t.id || 'type_' + Math.random().toString(36).slice(2),
+      name: t.name || t.id || '未命名',
+      enabled: t.enabled !== false,
+      resultCount: Math.max(1, t.resultCount || 5),
+      topN: Math.max(1, t.topN || t.resultCount || 5),
+      selectedAlgorithms: (t.selectedAlgorithms || []).filter(sa => sa && sa.id),
+      categories: t.categories,
+      numberRanges: t.numberRanges || t.categories.map(() => []),
+      isBuiltin: !!t.isBuiltin,
+      autoWeight: !!t.autoWeight,
+    }))
+  : defaultTypes();
 
-// 号码/生肖：若推送配置存在，用推送的模型列表替换（保留默认名称）
-let EFFECTIVE_NUMBER_MODELS = DEFAULT_NUMBER_MODELS;
-let EFFECTIVE_ZODIAC_MODELS = DEFAULT_ZODIAC_MODELS;
-if (PUSHED_CONFIG) {
-  if (Array.isArray(PUSHED_CONFIG.number) && PUSHED_CONFIG.number.length > 0) {
-    EFFECTIVE_NUMBER_MODELS = PUSHED_CONFIG.number.map(m => {
-      const def = DEFAULT_NUMBER_MODELS.find(d => d.id === m.id);
-      return { id: m.id, name: (def ? def.name : GENERIC_ALGO_NAMES[m.id]) || m.id, weight: m.weight };
-    });
-  }
-  if (Array.isArray(PUSHED_CONFIG.zodiac) && PUSHED_CONFIG.zodiac.length > 0) {
-    EFFECTIVE_ZODIAC_MODELS = PUSHED_CONFIG.zodiac.map(m => {
-      const def = DEFAULT_ZODIAC_MODELS.find(d => d.id === m.id);
-      return { id: m.id, name: (def ? def.name : GENERIC_ALGO_NAMES[m.id]) || m.id, weight: m.weight };
-    });
-  }
-}
-
-// 头数/尾数/五行：若推送配置存在，转为带权重的对象数组；否则保持字符串 ID 数组
-let HEAD_MODELS = DEFAULT_HEAD_MODELS;
-let TAIL_MODELS = DEFAULT_TAIL_MODELS;
-let ELEMENT_MODELS = DEFAULT_ELEMENT_MODELS;
-if (PUSHED_CONFIG) {
-  if (Array.isArray(PUSHED_CONFIG.head) && PUSHED_CONFIG.head.length > 0) {
-    HEAD_MODELS = PUSHED_CONFIG.head.map(m => normalizeWeighted(m.id, m.weight));
-  }
-  if (Array.isArray(PUSHED_CONFIG.tail) && PUSHED_CONFIG.tail.length > 0) {
-    TAIL_MODELS = PUSHED_CONFIG.tail.map(m => normalizeWeighted(m.id, m.weight));
-  }
-  if (Array.isArray(PUSHED_CONFIG.element) && PUSHED_CONFIG.element.length > 0) {
-    ELEMENT_MODELS = PUSHED_CONFIG.element.map(m => normalizeWeighted(m.id, m.weight));
-  }
-}
+const FINAL_COUNT = (PUSHED_CONFIG && PUSHED_CONFIG.finalCount) || 10;
 
 module.exports = {
   ZODIACS,
   COLOR_NUMBERS,
   YEAR_ELEMENTS,
   LICHUN_DATES,
-  DEFAULT_NUMBER_MODELS,
-  DEFAULT_ZODIAC_MODELS,
-  EFFECTIVE_NUMBER_MODELS,
-  EFFECTIVE_ZODIAC_MODELS,
-  COLOR_MODELS,
-  SIZE_MODELS,
-  PARITY_MODELS,
-  HEAD_MODELS,
-  TAIL_MODELS,
-  ELEMENT_MODELS,
-  HEAD_CATEGORIES,
-  TAIL_CATEGORIES,
-  ELEMENT_CATEGORIES,
   GENERIC_ALGO_NAMES,
   PUSHED_CONFIG,
+  EFFECTIVE_TYPES,
+  FINAL_COUNT,
+  buildTypeMapper,
+  defaultTypes,
   getLichunDate,
   getLunarZodiacYear,
   getZodiacByDate,
   getYearZodiacMapping,
   getZodiacByNumber,
+  getZodiacByRecord,
+  getElementByYear,
 };

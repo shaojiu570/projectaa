@@ -3,10 +3,11 @@
  * 基于 release34 程序逻辑
  */
 
-const { COLOR_NUMBERS, YEAR_ELEMENTS, getYearZodiacMapping } = require('./constants.cjs');
+const { COLOR_NUMBERS, YEAR_ELEMENTS, getYearZodiacMapping, getLunarZodiacYear } = require('./constants.cjs');
 
 /**
  * 根据号码和年份获取生肖
+ * year 应为农历生肖年份（立春后该公历年为当年，立春前为前一年）
  */
 function getZodiac(num, year) {
   year = year || new Date().getFullYear();
@@ -15,6 +16,20 @@ function getZodiac(num, year) {
     if (numbers.includes(num)) return zodiac;
   }
   return '未知';
+}
+
+/**
+ * 按开奖记录动态映射生肖（立春/农历年）
+ */
+function getZodiacOfRecord(record) {
+  return getZodiac(record.special, getLunarZodiacYear(new Date(record.date)));
+}
+
+/**
+ * 按开奖记录动态映射五行（日历年）
+ */
+function getElementOfRecord(record) {
+  return getElement(record.special, new Date(record.date).getFullYear());
 }
 
 /**
@@ -89,6 +104,8 @@ function formatDate(date) {
 
 module.exports = {
   getZodiac,
+  getZodiacOfRecord,
+  getElementOfRecord,
   getColor,
   getSize,
   getParity,

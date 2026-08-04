@@ -1,18 +1,21 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useData } from '../stores/DataContext';
 import { useModelLibrary } from '../stores/ModelLibraryContext';
-import { runPrediction, BUILTIN_TYPES, autoTuneWeights } from '../models/dynamic';
+import { runPrediction, BUILTIN_TYPES, autoTuneWeights, computeTopN, zodiacOfRecord, elementOfRecord } from '../models/dynamic';
+import { DrawRecord } from '../data/types';
 import { PredictionTypeConfig, DynamicPredictionRecord } from '../models/dynamic/types';
 import { calculateNextIssue, calculateNextDate } from '../utils/nextIssueCalculator';
 import { saveToStorage, loadFromStorage, clearStorage } from '../utils/storage';
 import NumberBall from './NumberBall';
 import {
   Play, Zap, Plus, Trash2, Clock, ChevronDown, ChevronRight, History,
-  Hash, X, RefreshCw, Target, Sparkles, BarChart3, Copy, ClipboardCheck,
+  Hash, X, RefreshCw, Target, Sparkles, BarChart3, Copy, ClipboardCheck, Send, SendHorizontal,
 } from 'lucide-react';
 
 const RECORDS_KEY = 'lottery_dynamic_records';
 const TYPES_KEY = 'lottery_dynamic_types';
+const API_BASE = 'http://localhost:3001';
+const DEFAULT_SCRIPT_REPO_PATH = 'D:\\ailiuhecai\\lottery-system';
 
 const ALGO_NAMES: Record<string, string> = {
   hot: '热度', cold: '遗漏', cycle: '周期', markov: '马尔科夫',
@@ -301,9 +304,116 @@ export default function DynamicPrediction() {
   const [showRecords, setShowRecords] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const [editingRange, setEditingRange] = useState<PredictionTypeConfig | null>(null);
+  const [scriptRepoPath, setScriptRepoPath] = useState<string>(() => localStorage.getItem('script_repo_path') || DEFAULT_SCRIPT_REPO_PATH);
+  const [pushMessage, setPushMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const persistTypes = (u: PredictionTypeConfig[]) => { localStorage.setItem(TYPES_KEY, JSON.stringify(u)); setTypes(u); };
   const persistRecords = (u: DynamicPredictionRecord[]) => { saveToStorage(u, RECORDS_KEY); setRecords(u); };
+
+  useEffect(() => {
+    localStorage.setItem('script_repo_path', scriptRepoPath);
+  }, [scriptRepoPath]);
+
+  // ==================== 一键推送（各类型/自定义类型 → 自动发送脚本） ====================
+  const buildPushConfig = useCallback(() => {
+    const enabled = types.filter(t => t.enabled);
+    return {
+      types: enabled.map(t => ({
+        id: t.id, name: t.name, resultCount: t.resultCount, topN: computeTopN(t),
+        selectedAlgorithms: t.selectedAlgorithms.map(sa => ({ id: sa.id, weight: sa.weight })),
+        categories: t.categories, numberRanges: t.numberRanges,
+        isBuiltin: t.isBuiltin, autoWeight: t.autoWeight,
+      })),
+      finalCount,
+      updatedAt: new Date().toISOString(),
+    };
+  }, [types, finalCount]);
+
+  const handlePushConfig = useCallback(async () => {
+    setPushMessage(null);
+    const enabled = types.filter(t => t.enabled);
+    if (enabled.length === 0) { setPushMessage({ ok: false, text: '请至少启用一个预测类型' }); return; }
+    const config = buildPushConfig();
+    const repoPath = scriptRepoPath.trim();
+    try {
+      const res = await fetch(`${API_BASE}/api/models/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config, repoPath: repoPath || undefined, autoGit: !!repoPath }),
+      });
+      const json = await res.json();
+      setPushMessage(json.success
+        ? { ok: true, text: json.message || '已推送' }
+        : { ok: false, text: json.message || '推送失败' });
+    } catch (e: any) {
+      setPushMessage({ ok: false, text: '无法连接后端服务：' + (e?.message || '未知错误') });
+    }
+  }, [buildPushConfig, scriptRepoPath, types]);
+
+  const copyPushConfig = useCallback(async () => {
+    const config = buildPushConfig();
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+      setPushMessage({ ok: true, text: '配置已复制到剪贴板，请保存为 scripts/predictor/config.json' });
+    } catch {
+      setPushMessage({ ok: false, text: '复制失败' });
+    }
+  }, [buildPushConfig]);
+
+  // ==================== 命中统计（覆盖全部类型 + 综合号码） ====================
+  const getActualCategory = useCallback((type: PredictionTypeConfig, rec: DrawRecord): string => {
+    if (type.isBuiltin && type.id === 'zodiac') return zodiacOfRecord(rec);
+    if (type.isBuiltin && type.id === 'element') return elementOfRecord(rec);
+    for (let i = 0; i < type.categories.length; i++) {
+      if ((type.numberRanges[i] || []).includes(rec.special)) return type.categories[i];
+    }
+    return '';
+  }, []);
+
+  const hitStats = useMemo(() => {
+    const byIssue = new Map(data.map(d => [d.issue, d]));
+    const typeMap = new Map(types.map(t => [t.id, t]));
+    const acc: Record<string, { id: string; name: string; total: number; drawn: number; hits: number }> = {};
+    types.forEach(t => acc[t.id] = { id: t.id, name: t.name, total: 0, drawn: 0, hits: 0 });
+    records.forEach(r => {
+      r.typeResults.forEach(tr => {
+        const type = (tr.typeId && typeMap.get(tr.typeId)) || types.find(t => t.name === tr.typeName);
+        if (!type) return;
+        const s = acc[type.id];
+        s.total++;
+        const rec = byIssue.get(r.issue);
+        if (!rec) return;
+        s.drawn++;
+        const actual = getActualCategory(type, rec);
+        if (actual && tr.categories.some(cp => cp.category === actual)) s.hits++;
+      });
+    });
+    return Object.values(acc);
+  }, [types, records, data, getActualCategory]);
+
+  const numberHitStats = useMemo(() => {
+    const byIssue = new Map(data.map(d => [d.issue, d]));
+    let total = 0, drawn = 0, hits = 0;
+    records.forEach(r => {
+      if (!r.finalNumbers || r.finalNumbers.length === 0) return;
+      total++;
+      const rec = byIssue.get(r.issue);
+      if (!rec) return;
+      drawn++;
+      if (r.finalNumbers.some(p => p.number === rec.special)) hits++;
+    });
+    return { total, drawn, hits, rate: drawn > 0 ? hits / drawn : 0 };
+  }, [records, data]);
+
+  const getTypeVerdict = useCallback((tr: { typeId: string; typeName: string; categories: { category: string; probability: number }[] }, r: DynamicPredictionRecord): { actual: string; hit: boolean } | null => {
+    const rec = data.find(d => d.issue === r.issue);
+    if (!rec) return null;
+    const type = (tr.typeId && types.find(t => t.id === tr.typeId)) || types.find(t => t.name === tr.typeName);
+    if (!type) return null;
+    const actual = getActualCategory(type, rec);
+    if (!actual) return null;
+    return { actual, hit: tr.categories.some(cp => cp.category === actual) };
+  }, [data, types, getActualCategory]);
 
   const runPredict = useCallback(async () => {
     const et = types.filter(t => t.enabled);
@@ -318,7 +428,7 @@ export default function DynamicPrediction() {
       setResult({ typeResults, finalNumbers, issue, date });
       const newRecord: DynamicPredictionRecord = {
         id: Date.now().toString(), timestamp: new Date().toISOString(), issue, date,
-        typeResults: typeResults.map(tr => ({ typeName: tr.typeName, categories: tr.categories })),
+        typeResults: typeResults.map(tr => ({ typeId: tr.typeId, typeName: tr.typeName, categories: tr.categories })),
         finalNumbers: finalNumbers.slice(0, finalCount),
         typeHits,
       };
@@ -353,6 +463,9 @@ export default function DynamicPrediction() {
             <p className="text-xs text-gray-400 mt-0.5">自由组建算法 → 自定义类型 → 多维度融合推荐</p>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={handlePushConfig} className="px-3 py-1.5 bg-green-600 text-white rounded-xl text-xs flex items-center gap-1.5 hover:bg-green-700 transition-colors" title="将当前全部已启用的预测类型（含自定义类型）推送并提交到自动发送脚本仓库">
+              <SendHorizontal className="w-3.5 h-3.5" /> 一键推送
+            </button>
             <button onClick={doAutoTune} className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:bg-gray-50 transition-colors" title="根据历史命中率自动调整各算法权重">
               <RefreshCw className="w-3.5 h-3.5" /> 自动调权
             </button>
@@ -364,6 +477,9 @@ export default function DynamicPrediction() {
             </button>
           </div>
         </div>
+        {pushMessage && (
+          <div className={`mb-3 text-xs ${pushMessage.ok ? 'text-green-600' : 'text-red-500'}`}>{pushMessage.text}</div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {types.map(type => (
@@ -385,6 +501,67 @@ export default function DynamicPrediction() {
               onEditRange={() => setEditingRange(type)}
             />
           ))}
+        </div>
+
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 font-medium block mb-1">自动发送脚本仓库路径（填了才自动 git commit + push）</label>
+              <input
+                value={scriptRepoPath}
+                onChange={e => setScriptRepoPath(e.target.value)}
+                placeholder="仓库根目录（需含 scripts/predictor/config.json）"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <p className="text-xs text-gray-400 mt-1">一键推送将当前所有已启用的预测类型（含自定义类型）写入 scripts/predictor/config.json 并提交推送</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={copyPushConfig} className="px-3 py-2 border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:bg-gray-50 transition-colors">
+                <Copy className="w-3.5 h-3.5" /> 复制配置
+              </button>
+              <button onClick={handlePushConfig} className="px-4 py-2 bg-green-600 text-white rounded-xl text-xs flex items-center gap-1.5 hover:bg-green-700 transition-colors">
+                <Send className="w-3.5 h-3.5" /> 一键推送
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+            <Target className="w-4 h-4 text-orange-500" />
+            命中统计 <span className="text-xs text-gray-400 font-normal">（按已开奖结果验证全部类型）</span>
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {hitStats.map(s => (
+            <div key={s.id} className="border border-gray-100 rounded-2xl p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">{s.name}</span>
+                <span className={`text-xs font-semibold ${s.drawn > 0 && s.hits / s.drawn >= 0.5 ? 'text-green-600' : 'text-red-400'}`}>
+                  {s.drawn > 0 ? `${((s.hits / s.drawn) * 100).toFixed(0)}%` : '--'}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">命中 <b>{s.hits}</b> / 已开奖 <b>{s.drawn}</b>（共预测 {s.total}）</div>
+              <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+                <div className={`h-full rounded-full ${s.drawn > 0 && s.hits / s.drawn >= 0.5 ? 'bg-green-500' : 'bg-red-400'}`}
+                  style={{ width: `${s.drawn > 0 ? (s.hits / s.drawn) * 100 : 0}%` }} />
+              </div>
+            </div>
+          ))}
+          <div className="border border-indigo-100 bg-indigo-50/50 rounded-2xl p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">综合推荐号码</span>
+              <span className={`text-xs font-semibold ${numberHitStats.rate >= 0.5 ? 'text-green-600' : 'text-red-400'}`}>
+                {numberHitStats.drawn > 0 ? `${(numberHitStats.rate * 100).toFixed(0)}%` : '--'}
+              </span>
+            </div>
+            <div className="text-xs text-gray-400 mt-1">命中 <b>{numberHitStats.hits}</b> / 已开奖 <b>{numberHitStats.drawn}</b>（共预测 {numberHitStats.total}）</div>
+            <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+              <div className={`h-full rounded-full ${numberHitStats.rate >= 0.5 ? 'bg-indigo-500' : 'bg-red-400'}`}
+                style={{ width: `${numberHitStats.drawn > 0 ? numberHitStats.rate * 100 : 0}%` }} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -529,11 +706,21 @@ export default function DynamicPrediction() {
                       {r.finalNumbers.map(p => <NumberBall key={p.number} number={p.number} size="xs" />)}
                     </div>
                     <div className="text-xs text-gray-400 mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                      {r.typeResults.map(tr => (
-                        <span key={tr.typeName} className="bg-gray-100 px-2 py-0.5 rounded-lg">
-                          {tr.typeName}: {tr.categories.map(c => c.category).join('/')}
-                        </span>
-                      ))}
+                      {r.typeResults.map(tr => {
+                        const v = getTypeVerdict(tr, r);
+                        return (
+                          <span key={tr.typeId || tr.typeName} className="bg-gray-100 px-2 py-0.5 rounded-lg">
+                            {tr.typeName}: {tr.categories.map(c => c.category).join('/')}
+                            {v ? (
+                              v.hit
+                                ? <span className="text-green-600 font-bold ml-1">✓ 命中</span>
+                                : <span className="text-red-500 ml-1">✗（实际 {v.actual}）</span>
+                            ) : (
+                              <span className="text-gray-300 ml-1">待开奖</span>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

@@ -1,9 +1,8 @@
 import { DrawRecord } from '../../data/types';
 import { seededRandom } from '../../utils/helpers';
-import { getColor } from '../../constants/color';
-import { getElement } from '../../constants/element';
+import { getElement, YEAR_ELEMENTS } from '../../constants/element';
 import { getTailNumber } from '../../constants/size';
-import { getZodiac } from '../../constants/zodiac';
+import { getLunarZodiacYear, getYearZodiacMapping, getZodiacByNumber } from '../../utils/lunarCalendar';
 import { AlgorithmConfig, PredictionTypeConfig, DynamicPredictionRecord } from './types';
 
 export interface BuiltinTypeMeta {
@@ -39,39 +38,88 @@ export const BUILTIN_TYPES: BuiltinTypeMeta[] = [
     id: 'element', name: '五行类',
     categories: ['金', '木', '水', '火', '土'],
     numberRanges: ['金', '木', '水', '火', '土'].map(e =>
-      Array.from({ length: 49 }, (_, i) => i + 1).filter(n => getElement(n) === e)),
+      (YEAR_ELEMENTS[new Date().getFullYear()] || YEAR_ELEMENTS[2026])[e] || []),
     resultCountMax: 5, resultCountPresets: [1, 2, 3, 5],
   },
   {
     id: 'zodiac', name: '生肖类',
     categories: ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪'],
-    numberRanges: ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪'].map(z =>
-      Array.from({ length: 49 }, (_, i) => i + 1).filter(n => getZodiac(n) === z)),
+    numberRanges: (() => {
+      const map = getYearZodiacMapping(getLunarZodiacYear(new Date()));
+      return ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪'].map(z => map[z] || []);
+    })(),
     resultCountMax: 12, resultCountPresets: [1, 2, 3, 5, 12],
-  },
-  {
-    id: 'color', name: '波色类',
-    categories: ['红波', '蓝波', '绿波'],
-    numberRanges: ['红波', '蓝波', '绿波'].map(c =>
-      Array.from({ length: 49 }, (_, i) => i + 1).filter(n => getColor(n) === c)),
-    resultCountMax: 3, resultCountPresets: [1, 2, 3],
   },
 ];
 
-type AlgoFactory = (cats: string[], getCat: (n: number) => string) =>
+function parseRecordDate(d: DrawRecord): Date {
+  const date = new Date(d.date);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function recordYear(d: DrawRecord): number {
+  return parseRecordDate(d).getFullYear();
+}
+
+/** 按开奖日期动态映射：生肖（立春/农历年） */
+export function zodiacOfRecord(d: DrawRecord): string {
+  return getZodiacByNumber(parseRecordDate(d), d.special);
+}
+
+/** 按开奖日期动态映射：五行（日历年） */
+export function elementOfRecord(d: DrawRecord): string {
+  return getElement(d.special, recordYear(d));
+}
+
+/** 估算下期开奖日期：最后一期 +1 天 */
+function estimateTargetDate(data: DrawRecord[]): Date {
+  if (data.length === 0) return new Date();
+  const d = new Date(parseRecordDate(data[data.length - 1]));
+  d.setDate(d.getDate() + 1);
+  return d;
+}
+
+/** 预测目标期号码映射：内置生肖/五行按目标日期动态生成，自定义类型用存储的 numberRanges */
+function getPredictionRanges(type: PredictionTypeConfig, date: Date): number[][] {
+  if (type.isBuiltin && type.id === 'zodiac') {
+    const map = getYearZodiacMapping(getLunarZodiacYear(date));
+    return type.categories.map(c => map[c] || []);
+  }
+  if (type.isBuiltin && type.id === 'element') {
+    const map = YEAR_ELEMENTS[date.getFullYear()] || YEAR_ELEMENTS[2026];
+    return type.categories.map(c => map[c] || []);
+  }
+  return type.numberRanges || [];
+}
+
+/**
+ * 命中判定 TopN：与自动发送脚本保持一致
+ */
+export function computeTopN(type: PredictionTypeConfig): number {
+  switch (type.id) {
+    case 'number': return 10;
+    case 'zodiac': return 9;
+    case 'head': return 4;
+    case 'tail': return 8;
+    case 'element': return 4;
+    default: return Math.max(type.resultCount, Math.min(5, type.categories.length));
+  }
+}
+
+type AlgoFactory = (cats: string[], getCat: (d: DrawRecord) => string) =>
   (data: DrawRecord[], seed: number) => Record<string, number>;
 
 /**
  * 全量历史 + 指数衰减计数：覆盖所有开奖记录，但越近的期数权重越高。
  * 半衰期约 34 期（decay=0.98），既充分利用全部历史，又不被远古数据稀释。
  */
-function weightedCounts(cats: string[], data: DrawRecord[], getCat: (n: number) => string, decay = 0.98): Record<string, number> {
+function weightedCounts(cats: string[], data: DrawRecord[], getCat: (d: DrawRecord) => string, decay = 0.98): Record<string, number> {
   const counts: Record<string, number> = {};
   cats.forEach(c => counts[c] = 0);
   const n = data.length;
   for (let i = 0; i < n; i++) {
     const w = Math.pow(decay, n - 1 - i);
-    const c = getCat(data[i].special);
+    const c = getCat(data[i]);
     counts[c] = (counts[c] || 0) + w;
   }
   return counts;
@@ -91,7 +139,7 @@ const cold: AlgoFactory = (cats, getCat) => (data, seed) => {
   const p: Record<string, number> = {}; cats.forEach(c => p[c] = 0);
   const last: Record<string, number> = {}; cats.forEach(c => last[c] = -1);
   for (let i = data.length - 1; i >= 0; i--) {
-    const c = getCat(data[i].special);
+    const c = getCat(data[i]);
     if (last[c] === -1) last[c] = i;
     if (Object.values(last).every(v => v !== -1)) break;
   }
@@ -108,7 +156,7 @@ const cycle: AlgoFactory = (cats, getCat) => (data, seed) => {
   cats.forEach(c => {
     const pos: number[] = [];
     for (let i = n - 1; i >= 0; i--) {
-      if (getCat(data[i].special) === c) { pos.push(i); if (pos.length >= 8) break; }
+      if (getCat(data[i]) === c) { pos.push(i); if (pos.length >= 8) break; }
     }
     pos.reverse();
     if (pos.length >= 2) {
@@ -128,8 +176,8 @@ const markov: AlgoFactory = (cats, getCat) => (data, seed) => {
   const p: Record<string, number> = {}; cats.forEach(c => p[c] = 0);
   const trans: Record<string, Record<string, number>> = {};
   cats.forEach(c => { trans[c] = {}; cats.forEach(c2 => trans[c][c2] = 0); });
-  for (let i = 1; i < data.length; i++) { const a = getCat(data[i - 1].special); const b = getCat(data[i].special); if (trans[a]) trans[a][b] = (trans[a][b] || 0) + 1; }
-  const last = getCat(data[data.length - 1].special);
+  for (let i = 1; i < data.length; i++) { const a = getCat(data[i - 1]); const b = getCat(data[i]); if (trans[a]) trans[a][b] = (trans[a][b] || 0) + 1; }
+  const last = getCat(data[data.length - 1]);
   if (trans[last]) {
     const total = Object.values(trans[last]).reduce((a, b) => a + b, 0);
     if (total > 0) cats.forEach(c => p[c] = (trans[last][c] || 0) / total * 0.8 + rng() * 0.2);
@@ -145,7 +193,7 @@ const ma: AlgoFactory = (cats, getCat) => (data, seed) => {
   const weights = [0.5, 0.3, 0.2];
   recent.forEach((d, i) => {
     const ci = recent.length - 1 - i;
-    if (ci < weights.length) { const c = getCat(d.special); p[c] = (p[c] || 0) + weights[ci]; }
+    if (ci < weights.length) { const c = getCat(d); p[c] = (p[c] || 0) + weights[ci]; }
   });
   cats.forEach(c => p[c] = (p[c] || 0) + rng() * 0.1);
   const s = Object.values(p).reduce((a, b) => a + b, 0) || 1; cats.forEach(c => p[c] /= s); return p;
@@ -165,11 +213,11 @@ const bayes: AlgoFactory = (cats, getCat) => (data, seed) => {
   const p: Record<string, number> = {};
   const prior = weightedCounts(cats, data, getCat);
   const pt = Object.values(prior).reduce((a, b) => a + b, 0) || 1;
-  const last = data.length > 1 ? getCat(data[data.length - 2].special) : '';
+  const last = data.length > 1 ? getCat(data[data.length - 2]) : '';
   if (last) {
     const cond: Record<string, number> = {}; cats.forEach(c => cond[c] = 0);
     for (let i = 1; i < data.length; i++) {
-      if (getCat(data[i - 1].special) === last) { const c = getCat(data[i].special); cond[c] = (cond[c] || 0) + 1; }
+      if (getCat(data[i - 1]) === last) { const c = getCat(data[i]); cond[c] = (cond[c] || 0) + 1; }
     }
     const ct = Object.values(cond).reduce((a, b) => a + b, 0) || 1;
     cats.forEach(c => p[c] = ((cond[c] || 0) / ct) * 0.6 + ((prior[c] || 0) / pt) * 0.3 + rng() * 0.1);
@@ -185,11 +233,11 @@ const apriori: AlgoFactory = (cats, getCat) => (data, seed) => {
   const pairs: Record<string, Record<string, number>> = {};
   cats.forEach(c => { pairs[c] = {}; cats.forEach(c2 => pairs[c][c2] = 0); });
   for (let i = 2; i < data.length; i++) {
-    const a = getCat(data[i - 2].special); const b = getCat(data[i - 1].special);
+    const a = getCat(data[i - 2]); const b = getCat(data[i - 1]);
     if (pairs[a]) pairs[a][b] = (pairs[a][b] || 0) + 1;
   }
   if (data.length >= 2) {
-    const lastTwo = getCat(data[data.length - 2].special);
+    const lastTwo = getCat(data[data.length - 2]);
     if (pairs[lastTwo]) {
       const total = Object.values(pairs[lastTwo]).reduce((a, b) => a + b, 0) || 1;
       cats.forEach(c => p[c] = ((pairs[lastTwo][c] || 0) / total) * 0.7 + rng() * 0.3);
@@ -207,7 +255,7 @@ const rf: AlgoFactory = (cats, getCat) => (data, seed) => {
     const tSeed = seededRandom(seed + 100 + tree);
     const sample = [...Array(30)].map(() => recent[Math.floor(tSeed() * recent.length)]).filter(Boolean);
     const votes: Record<string, number> = {}; cats.forEach(c => votes[c] = 0);
-    sample.forEach(d => { const c = getCat(d.special); votes[c] = (votes[c] || 0) + 1; });
+    sample.forEach(d => { const c = getCat(d); votes[c] = (votes[c] || 0) + 1; });
     cats.forEach(c => p[c] += (votes[c] || 0) / sample.length);
   }
   cats.forEach(c => p[c] = p[c] / 10 * 0.7 + rng() * 0.3);
@@ -222,7 +270,7 @@ const xgboost: AlgoFactory = (cats, getCat) => (data, seed) => {
     const bSeed = seededRandom(seed + 200 + boost);
     const residuals: Record<string, number> = {}; cats.forEach(c => residuals[c] = 0);
     const sample = [...Array(20)].map(() => recent[Math.floor(bSeed() * recent.length)]).filter(Boolean);
-    sample.forEach(d => { const c = getCat(d.special); residuals[c] = (residuals[c] || 0) + 1; });
+    sample.forEach(d => { const c = getCat(d); residuals[c] = (residuals[c] || 0) + 1; });
     cats.forEach(c => p[c] += ((residuals[c] || 0) / sample.length) * (0.5 + bSeed() * 0.3));
   }
   cats.forEach(c => p[c] = p[c] / 5 + rng() * 0.1);
@@ -236,7 +284,7 @@ const lstm: AlgoFactory = (cats, getCat) => (data, seed) => {
   const sequence: Record<string, number>[] = [];
   for (let i = 0; i < recent.length; i++) {
     const step: Record<string, number> = {}; cats.forEach(c => step[c] = 0);
-    const c = getCat(recent[i].special); step[c] = 1;
+    const c = getCat(recent[i]); step[c] = 1;
     sequence.push(step);
   }
   const lookback = 10;
@@ -265,7 +313,7 @@ const genetic: AlgoFactory = (cats, getCat) => (data, seed) => {
   }
   for (let gen = 0; gen < 5; gen++) {
     const fitness = pop.map(ind => {
-      let score = 0; recent.forEach(d => { const c = getCat(d.special); score += ind[c] || 0; });
+      let score = 0; recent.forEach(d => { const c = getCat(d); score += ind[c] || 0; });
       return score / recent.length;
     });
     const bestIdx = fitness.indexOf(Math.max(...fitness));
@@ -288,7 +336,7 @@ const rl: AlgoFactory = (cats, getCat) => (data, seed) => {
   const qValues: Record<string, number> = {}; cats.forEach(c => qValues[c] = rng());
   const lr = 0.1; const discount = 0.9;
   for (let i = 1; i < recent.length; i++) {
-    const state = getCat(recent[i - 1].special);
+    const state = getCat(recent[i - 1]);
     const reward = 1;
     if (qValues[state] != null) qValues[state] = qValues[state] + lr * (reward + discount * Math.max(...cats.map(c => qValues[c])) - qValues[state]);
   }
@@ -306,8 +354,8 @@ const bandit: AlgoFactory = (cats, getCat) => (data, seed) => {
   const n = data.length;
   for (let i = 0; i < n; i++) {
     const w = Math.pow(0.98, n - 1 - i);
-    const c = getCat(data[i].special); counts[c] = (counts[c] || 0) + w;
-    if (i > 0) { const prev = getCat(data[i - 1].special); if (c === prev) rewards[prev] = (rewards[prev] || 0) + w; }
+    const c = getCat(data[i]); counts[c] = (counts[c] || 0) + w;
+    if (i > 0) { const prev = getCat(data[i - 1]); if (c === prev) rewards[prev] = (rewards[prev] || 0) + w; }
   }
   cats.forEach(c => {
     const avg = counts[c] ? ((rewards[c] || 0) / counts[c]) : 0;
@@ -339,16 +387,15 @@ export const PREDEFINED_ALGOS: AlgorithmConfig[] = [
   { id: 'bandit', name: '多臂老虎机', enabled: true, weight: 1 },
 ];
 
-function getTypeMapper(type: PredictionTypeConfig): (n: number) => string {
-  if (type.isBuiltin && type.id === 'number') return n => String(n);
-  if (type.isBuiltin && type.id === 'tail') return n => String(getTailNumber(n));
-  if (type.isBuiltin && type.id === 'head') return n => String(Math.floor(n / 10));
-  if (type.isBuiltin && type.id === 'element') return n => getElement(n);
-  if (type.isBuiltin && type.id === 'zodiac') return n => getZodiac(n);
-  if (type.isBuiltin && type.id === 'color') return n => getColor(n);
-  return n => {
+function getTypeMapper(type: PredictionTypeConfig): (d: DrawRecord) => string {
+  if (type.isBuiltin && type.id === 'number') return d => String(d.special);
+  if (type.isBuiltin && type.id === 'tail') return d => String(getTailNumber(d.special));
+  if (type.isBuiltin && type.id === 'head') return d => String(Math.floor(d.special / 10));
+  if (type.isBuiltin && type.id === 'element') return elementOfRecord;
+  if (type.isBuiltin && type.id === 'zodiac') return zodiacOfRecord;
+  return d => {
     for (let i = 0; i < type.categories.length; i++) {
-      if ((type.numberRanges[i] || []).includes(n)) return type.categories[i];
+      if ((type.numberRanges[i] || []).includes(d.special)) return type.categories[i];
     }
     return type.categories[0] || '';
   };
@@ -394,7 +441,7 @@ export function evaluateAlgorithmsSampleOut(
       const testRecord = data[pi];
       const lastIssue = trainData[trainData.length - 1]?.issue || '0';
       const seed = lastIssue.split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
-      const actual = getCat(testRecord.special);
+      const actual = getCat(testRecord);
 
       enabledAlgos.forEach((ta, idx) => {
         const factory = ALGO_FACTORIES[ta.id];
@@ -430,16 +477,18 @@ export function runPrediction(
   globalAlgos: AlgorithmConfig[],
   enabledTypes: PredictionTypeConfig[],
 ): {
-  typeResults: { typeName: string; categories: { category: string; probability: number }[] }[];
+  typeResults: { typeId: string; typeName: string; categories: { category: string; probability: number }[] }[];
   typeHits?: { typeId: string; actualCategory: string; algorithmResults: { algoId: string; rank: number }[] }[];
   finalNumbers: { number: number; probability: number }[];
 } {
-  const typeResultsList: { typeName: string; categories: { category: string; probability: number }[] }[] = [];
+  const typeResultsList: { typeId: string; typeName: string; categories: { category: string; probability: number }[] }[] = [];
   const typeHitsList: { typeId: string; actualCategory: string; algorithmResults: { algoId: string; rank: number }[] }[] = [];
   const fused49 = new Array(49).fill(0);
+  const targetDate = estimateTargetDate(data);
 
   enabledTypes.forEach(type => {
     const getCat = getTypeMapper(type);
+    const ranges = getPredictionRanges(type, targetDate);
     const enabledAlgos = type.selectedAlgorithms.filter(ta => globalAlgos.some(ga => ga.id === ta.id && ga.enabled));
     if (enabledAlgos.length === 0) return;
 
@@ -467,7 +516,7 @@ export function runPrediction(
         : seed;
       const evalProbs = fn(evalTrain.length > 0 ? evalTrain : data, lastSeed);
       const evalSorted = type.categories.map(c => ({ c, p: evalProbs[c] || 0 })).sort((a, b) => b.p - a.p);
-      const actualSpecial = data.length > 0 ? getCat(data[data.length - 1].special) : '';
+      const actualSpecial = data.length > 0 ? getCat(data[data.length - 1]) : '';
       const rank = evalSorted.findIndex(x => x.c === actualSpecial) + 1;
       algoRanks.push({ algoId: ta.id, rank: rank > 0 ? rank : 99 });
 
@@ -482,14 +531,14 @@ export function runPrediction(
       .sort((a, b) => b.probability - a.probability)
       .slice(0, type.resultCount);
 
-    typeResultsList.push({ typeName: type.name, categories: sorted });
+    typeResultsList.push({ typeId: type.id, typeName: type.name, categories: sorted });
 
-    const lastCat = data.length > 0 ? getCat(data[data.length - 1].special) : '';
+    const lastCat = data.length > 0 ? getCat(data[data.length - 1]) : '';
     typeHitsList.push({ typeId: type.id, actualCategory: lastCat, algorithmResults: algoRanks });
 
     const typeWeight = 1 / enabledTypes.length;
     sorted.forEach(cp => {
-      const nums = type.numberRanges[type.categories.indexOf(cp.category)] || [];
+      const nums = ranges[type.categories.indexOf(cp.category)] || [];
       nums.forEach(n => { fused49[n - 1] += cp.probability * typeWeight; });
     });
   });

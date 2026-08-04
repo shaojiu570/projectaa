@@ -62,7 +62,8 @@ export function getYearZodiacMapping(year: number): Record<string, number[]> {
 }
 
 export function getZodiacByNumber(date: Date, number: number): string {
-  const mapping = getYearZodiacMapping(date.getFullYear());
+  const lunarYear = getLunarZodiacYear(date);
+  const mapping = getYearZodiacMapping(lunarYear);
   for (const [zodiac, numbers] of Object.entries(mapping)) {
     if (numbers.includes(number)) {
       return zodiac;

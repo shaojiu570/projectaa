@@ -4,7 +4,6 @@
  */
 
 const crypto = require('crypto');
-const { EFFECTIVE_NUMBER_MODELS, EFFECTIVE_ZODIAC_MODELS, COLOR_MODELS, SIZE_MODELS, PARITY_MODELS, HEAD_MODELS, TAIL_MODELS, ELEMENT_MODELS } = require('./constants.cjs');
 
 // 从环境变量读取配置
 const CONFIG = {
@@ -215,9 +214,8 @@ async function notify(title, content) {
  * 格式与本地前端保持一致
  */
 function formatMessage(pred, data) {
-  const { formatDate, getZodiac, getColor, getSize, getParity } = require('./utils.cjs');
+  const { formatDate, getZodiacOfRecord } = require('./utils.cjs');
   
-  const year = new Date().getFullYear();
   const lastRecord = data[data.length - 1];
   const lastIssueNum = lastRecord ? parseInt(lastRecord.issue.slice(-3)) : 0;
   const nextIssue = lastIssueNum + 1;
@@ -229,23 +227,30 @@ function formatMessage(pred, data) {
     `【六合彩预测】第${nextIssue}期 (${dateStr})`,
     `基于第${lastIssueNum}期数据`,
     '',
-    `📊 号码第一层（30个）：`,
-    pred.numbers.level1.map(r => String(r.number).padStart(2, '0')).join(' '),
-    '',
-    `🐲 生肖第一层（9个）：`,
-    pred.zodiacs.level1.map(z => z.zodiac).join(' '),
-    '',
-      `**波色**: ${pred.colors.level1.map(c => c.color).join('、')}　**大小**: ${pred.topSize}　**单双**: ${pred.topParity}`,
-      '',
-      `🔢 头数 Top4: ${pred.headPreds.map(h => h.label).join(' ')}`,
-      `🔢 尾数 Top8: ${pred.tailPreds.map(t => t.label).join(' ')}`,
-      `🔢 五行 Top4: ${pred.elementPreds.map(e => e.label).join(' ')}`,
-      '',
-    `最近5期`,
-    ...last5.map(r => `> ${r.issue.slice(-3)}期 ${r.special} ${getZodiac(r.special, year)} ${getColor(r.special)}`),
-    '',
-    `_${formatDate(new Date())} | ${data.length}期数据 | ${EFFECTIVE_NUMBER_MODELS.length + EFFECTIVE_ZODIAC_MODELS.length + COLOR_MODELS.length + SIZE_MODELS.length + PARITY_MODELS.length + HEAD_MODELS.length + TAIL_MODELS.length + ELEMENT_MODELS.length}个模型_`,
   ];
+
+  pred.types.forEach(t => {
+    const text = t.predictions
+      .map(p => t.id === 'number' ? String(p.category).padStart(2, '0') : p.category)
+      .join(' ');
+    lines.push(`📊 ${t.name}（${t.predictions.length}个）：`, text, '');
+  });
+
+  lines.push(`🎯 推荐号码（${pred.finalCount}个）：`);
+  lines.push(pred.finalNumbers.slice(0, pred.finalCount).map(n => String(n.number).padStart(2, '0')).join(' '));
+
+  if (pred.combos.length > 0) {
+    lines.push('', '🔢 综合推荐：');
+    lines.push(pred.combos.map(c => `${c.zodiac}+${String(c.number).padStart(2, '0')}`).join('  '));
+  }
+
+  lines.push(
+    '',
+    '最近5期',
+    ...last5.map(r => `> ${r.issue.slice(-3)}期 ${r.special} ${getZodiacOfRecord(r)}`),
+    '',
+    `_${formatDate(new Date())} | ${data.length}期数据 | ${pred.types.length}种类型_`,
+  );
 
   return lines.join('\n');
 }

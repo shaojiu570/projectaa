@@ -23,6 +23,7 @@ export interface PredictionTypeConfig {
   numberRanges: number[][];
   isBuiltin: boolean;
   autoWeight: boolean;
+  topN?: number;
 }
 
 export interface DynamicPredictionRecord {
@@ -30,7 +31,7 @@ export interface DynamicPredictionRecord {
   timestamp: string;
   issue: string;
   date: string;
-  typeResults: { typeName: string; categories: { category: string; probability: number }[] }[];
+  typeResults: { typeId: string; typeName: string; categories: { category: string; probability: number }[] }[];
   finalNumbers: { number: number; probability: number }[];
   typeHits?: { typeId: string; actualCategory: string; algorithmResults: { algoId: string; rank: number }[] }[];
 }
