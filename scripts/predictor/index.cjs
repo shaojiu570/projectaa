@@ -54,15 +54,6 @@ async function main() {
   console.log(pred.finalNumbers.slice(0, pred.finalCount).map(n => String(n.number).padStart(2, '0')).join(', '));
   console.log('');
 
-  // 综合推荐
-  if (pred.combos.length > 0) {
-    console.log('【综合推荐】');
-    pred.combos.forEach(c => {
-      console.log(`  ${c.zodiac} + ${String(c.number).padStart(2, '0')} (${(c.probability * 100).toFixed(4)}%)`);
-    });
-    console.log('');
-  }
-
   // 最近5期
   console.log('【最近5期开奖】');
   const last5 = data.slice(-5).reverse();

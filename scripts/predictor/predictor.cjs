@@ -138,28 +138,10 @@ function runPrediction(data) {
     .map(n => ({ number: n, probability: fused49[n - 1] }))
     .sort((a, b) => b.probability - a.probability);
 
-  // 综合推荐（号码 + 生肖组合）
-  const numType = perType.find(t => t.id === 'number');
-  const zodType = perType.find(t => t.id === 'zodiac');
-  const combos = [];
-  if (numType && zodType) {
-    for (const z of zodType.predictions.slice(0, 3)) {
-      for (const n of numType.predictions.slice(0, 5)) {
-        combos.push({
-          zodiac: z.category,
-          number: parseInt(n.category),
-          probability: z.probability * n.probability,
-        });
-      }
-    }
-    combos.sort((a, b) => b.probability - a.probability);
-  }
-
   return {
     types: perType,
     finalNumbers,
     finalCount: Math.max(1, FINAL_COUNT || 10),
-    combos: combos.slice(0, 2),
   };
 }
 

@@ -239,11 +239,6 @@ function formatMessage(pred, data) {
   lines.push(`🎯 推荐号码（${pred.finalCount}个）：`);
   lines.push(pred.finalNumbers.slice(0, pred.finalCount).map(n => String(n.number).padStart(2, '0')).join(' '));
 
-  if (pred.combos.length > 0) {
-    lines.push('', '🔢 综合推荐：');
-    lines.push(pred.combos.map(c => `${c.zodiac}+${String(c.number).padStart(2, '0')}`).join('  '));
-  }
-
   lines.push(
     '',
     '最近5期',

@@ -451,6 +451,13 @@ export default function DynamicPrediction() {
   const clearRecords = () => { clearStorage(RECORDS_KEY); setRecords([]); };
   const deleteRecord = (id: string) => { persistRecords(records.filter(r => r.id !== id)); };
 
+  // 预测记录自动按日期（升序期号=最新在前）排序
+  const displayRecords = useMemo(
+    () => [...records].sort((a, b) =>
+      (b.date || '').localeCompare(a.date || '') || (b.timestamp || '').localeCompare(a.timestamp || '')),
+    [records],
+  );
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
@@ -689,7 +696,7 @@ export default function DynamicPrediction() {
               <div className="p-10 text-center text-gray-400 text-sm">暂无预测记录</div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {records.map(r => (
+                {displayRecords.map(r => (
                   <div key={r.id} className="p-4 hover:bg-gray-50 transition-colors">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm">

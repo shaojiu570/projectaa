@@ -1,5 +1,6 @@
 import { DrawRecord } from '../data/types';
-import { getZodiac, getColor, getParity, getSize, getElement, ZODIACS } from '../constants';
+import { getColor, getParity, getSize, getElement, ZODIACS } from '../constants';
+import { getZodiacByNumber } from './lunarCalendar';
 
 export type StateGroup = '生肖' | '波色' | '大小' | '奇偶' | '五行';
 
@@ -13,14 +14,13 @@ export interface MarkovResult {
   isMarkov: boolean;
 }
 
-function getStateMapping(group: StateGroup): (num: number) => string {
-  const currentYear = new Date().getFullYear();
+function getStateMapping(group: StateGroup): (d: DrawRecord) => string {
   switch (group) {
-    case '生肖': return (n) => getZodiac(n);
-    case '波色': return (n) => getColor(n);
-    case '大小': return (n) => getSize(n);
-    case '奇偶': return (n) => getParity(n);
-    case '五行': return (n) => getElement(n, currentYear);
+    case '生肖': return (d) => getZodiacByNumber(new Date(d.date), d.special);
+    case '波色': return (d) => getColor(d.special);
+    case '大小': return (d) => getSize(d.special);
+    case '奇偶': return (d) => getParity(d.special);
+    case '五行': return (d) => getElement(d.special, new Date(d.date).getFullYear());
   }
 }
 
@@ -41,7 +41,7 @@ export function computeMarkov(data: DrawRecord[], group: StateGroup): MarkovResu
   const n = states.length;
 
   const freq: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
-  const sequence = data.map(d => mapper(d.special));
+  const sequence = data.map(d => mapper(d));
 
   for (let i = 0; i < sequence.length - 1; i++) {
     const from = stateIdx.get(sequence[i]);
