@@ -93,17 +93,11 @@ function getPredictionRanges(type: PredictionTypeConfig, date: Date): number[][]
 }
 
 /**
- * 命中判定 TopN：与自动发送脚本保持一致
+ * 命中判定 TopN：跟随各类型「推荐数量」设置（resultCount），
+ * 与前端展示、自动发送脚本的判定窗口保持一致。
  */
 export function computeTopN(type: PredictionTypeConfig): number {
-  switch (type.id) {
-    case 'number': return 10;
-    case 'zodiac': return 9;
-    case 'head': return 4;
-    case 'tail': return 8;
-    case 'element': return 4;
-    default: return Math.max(type.resultCount, Math.min(5, type.categories.length));
-  }
+  return Math.max(1, Math.min(type.resultCount || 1, type.categories.length));
 }
 
 type AlgoFactory = (cats: string[], getCat: (d: DrawRecord) => string) =>
