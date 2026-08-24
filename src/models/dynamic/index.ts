@@ -387,7 +387,7 @@ export const PREDEFINED_ALGOS: AlgorithmConfig[] = [
   { id: 'bandit', name: '多臂老虎机', enabled: true, weight: 1 },
 ];
 
-function getTypeMapper(type: PredictionTypeConfig): (d: DrawRecord) => string {
+export function getTypeMapper(type: PredictionTypeConfig): (d: DrawRecord) => string {
   if (type.isBuiltin && type.id === 'number') return d => String(d.special);
   if (type.isBuiltin && type.id === 'tail') return d => String(getTailNumber(d.special));
   if (type.isBuiltin && type.id === 'head') return d => String(Math.floor(d.special / 10));

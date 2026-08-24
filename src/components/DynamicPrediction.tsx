@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useData } from '../stores/DataContext';
 import { useModelLibrary } from '../stores/ModelLibraryContext';
 import { runPrediction, BUILTIN_TYPES, autoTuneWeights, computeTopN, zodiacOfRecord, elementOfRecord } from '../models/dynamic';
+import { runTypeBacktest, TypeBacktestResult } from '../engine/backtest';
 import { DrawRecord } from '../data/types';
 import { PredictionTypeConfig, DynamicPredictionRecord } from '../models/dynamic/types';
 import { calculateNextIssue, calculateNextDate } from '../utils/nextIssueCalculator';
@@ -458,6 +459,51 @@ export default function DynamicPrediction() {
     [records],
   );
 
+  // ==================== 回测（权重寻优 + 样本外盲测 → 一键应用到模型） ====================
+  const [showBacktest, setShowBacktest] = useState(false);
+  const [btLookback, setBtLookback] = useState(20);
+  const [btBlindN, setBtBlindN] = useState(10);
+  const [btRunning, setBtRunning] = useState(false);
+  const [btResults, setBtResults] = useState<TypeBacktestResult[]>([]);
+  const [btError, setBtError] = useState('');
+  const [btAppliedIds, setBtAppliedIds] = useState<Set<string>>(new Set());
+
+  const handleBacktest = useCallback(() => {
+    if (data.length < 30) { alert('历史数据不足（至少 30 期）'); return; }
+    if (types.filter(t => t.enabled).length === 0) { alert('请至少启用一个预测类型'); return; }
+    setBtRunning(true); setBtError(''); setBtResults([]); setBtAppliedIds(new Set());
+    setTimeout(() => {
+      try {
+        const results: TypeBacktestResult[] = [];
+        types.filter(t => t.enabled).forEach(t => {
+          try { results.push(runTypeBacktest(data, t, algorithms, { lookback: btLookback, blindN: btBlindN })); }
+          catch (err: any) { console.error(err); }
+        });
+        setBtResults(results);
+      } catch (e: any) { setBtError(e?.message || '回测失败'); }
+      setBtRunning(false);
+    }, 30);
+  }, [data, types, algorithms, btLookback, btBlindN]);
+
+  const applyBacktestWeights = useCallback((res: TypeBacktestResult) => {
+    persistTypes(types.map(t => {
+      if (t.id !== res.typeId) return t;
+      const bw = new Map(res.bestWeights.map(w => [w.id, w.weight]));
+      return {
+        ...t,
+        selectedAlgorithms: t.selectedAlgorithms.map(sa => {
+          const w = bw.get(sa.id);
+          return w != null ? { ...sa, weight: parseFloat(w.toFixed(2)) } : sa;
+        }),
+      };
+    }));
+    setBtAppliedIds(prev => new Set(prev).add(res.typeId));
+  }, [types]);
+
+  const applyAllBacktestWeights = useCallback(() => {
+    btResults.forEach(res => applyBacktestWeights(res));
+  }, [btResults, applyBacktestWeights]);
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
@@ -475,6 +521,9 @@ export default function DynamicPrediction() {
             </button>
             <button onClick={doAutoTune} className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:bg-gray-50 transition-colors" title="根据历史命中率自动调整各算法权重">
               <RefreshCw className="w-3.5 h-3.5" /> 自动调权
+            </button>
+            <button onClick={() => setShowBacktest(true)} className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:bg-gray-50 transition-colors" title="各类型权重寻优 + 样本外盲测，结果可一键应用到对应模型">
+              <BarChart3 className="w-3.5 h-3.5" /> 回测
             </button>
             <button onClick={() => setShowRecords(true)} className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:bg-gray-50 transition-colors">
               <History className="w-3.5 h-3.5" /> 记录 ({records.length})
@@ -733,6 +782,130 @@ export default function DynamicPrediction() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showBacktest && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-10 bg-black/40" onClick={() => setShowBacktest(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white z-10">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-indigo-500" />
+                预测回测
+                <span className="text-xs text-gray-400 font-normal">（样本内权重寻优 + 样本外盲测）</span>
+              </h3>
+              <button onClick={() => setShowBacktest(false)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-xl"><X className="w-4 h-4" /></button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">寻优窗口（期）</label>
+                  <input type="number" min={5} max={200} value={btLookback}
+                    onChange={e => setBtLookback(Math.max(5, Math.min(200, parseInt(e.target.value) || 20)))}
+                    className="w-24 px-2 py-1.5 border border-gray-200 rounded-xl text-sm text-center" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">盲测期数（样本外）</label>
+                  <input type="number" min={0} max={100} value={btBlindN}
+                    onChange={e => setBtBlindN(Math.max(0, Math.min(100, parseInt(e.target.value) || 0)))}
+                    className="w-24 px-2 py-1.5 border border-gray-200 rounded-xl text-sm text-center" />
+                </div>
+                <button onClick={handleBacktest} disabled={btRunning}
+                  className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                  {btRunning ? '回测中...' : '开始回测'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                对每个已启用类型：在最近 N 期滚动窗口内搜索最优算法权重组合（每期训练只用该期之前的数据，融合结果 Top{`{N}`} 命中率最大化），再用最优组合在其后的盲测区逐期验证。回测数值可一键写入对应类型的算法权重。
+              </p>
+
+              {btError && <div className="text-sm text-red-500">{btError}</div>}
+
+              {btResults.length > 0 && !btRunning && (
+                <div className="flex justify-end">
+                  <button onClick={applyAllBacktestWeights} className="px-4 py-1.5 bg-green-600 text-white rounded-xl text-xs hover:bg-green-700 flex items-center gap-1.5">
+                    <SendHorizontal className="w-3.5 h-3.5" /> 全部应用到对应模型
+                  </button>
+                </div>
+              )}
+
+              {btRunning && (
+                <div className="py-8 text-center text-sm text-gray-500">正在对全部启用类型进行权重寻优与盲测…</div>
+              )}
+
+              {!btRunning && btResults.map(res => {
+                const applied = btAppliedIds.has(res.typeId);
+                return (
+                  <div key={res.typeId} className={`border rounded-2xl p-4 ${applied ? 'border-green-200 bg-green-50/40' : 'border-gray-100'}`}>
+                    <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-gray-800 text-sm">{res.typeName}</span>
+                        <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg">Top{res.topN}</span>
+                        <span className="text-xs text-gray-400">{res.totalCombos} 组权重 · 寻优 {res.searchTotal} 期</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {applied && <span className="text-xs text-green-600 font-medium">✓ 已应用</span>}
+                        <button onClick={() => applyBacktestWeights(res)}
+                          className={`px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition-colors ${applied ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-600 text-white hover:bg-green-700'}`}>
+                          <SendHorizontal className="w-3.5 h-3.5" /> 应用到该类型
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+                      <div className="bg-gray-50 rounded-xl p-2.5">
+                        <div className="text-xs text-gray-400 mb-0.5">样本内 TopN 命中</div>
+                        <div className="text-base font-bold text-gray-800">
+                          {res.searchHits}/{res.searchTotal}
+                          <span className="text-xs font-medium text-gray-500 ml-1">({(res.bestHitRate * 100).toFixed(0)}%)</span>
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-2.5">
+                        <div className="text-xs text-gray-400 mb-0.5">盲测命中（样本外）</div>
+                        <div className={`text-base font-bold ${res.blindTotal > 0 && res.blindHits / res.blindTotal >= res.bestHitRate ? 'text-green-600' : res.blindTotal > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+                          {res.blindTotal > 0 ? `${res.blindHits}/${res.blindTotal}` : '--'}
+                          {res.blindTotal > 0 && <span className="text-xs font-medium text-gray-500 ml-1">({((res.blindHits / res.blindTotal) * 100).toFixed(0)}%)</span>}
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-2.5 col-span-2 sm:col-span-1">
+                        <div className="text-xs text-gray-400 mb-1">最优权重（应用后生效）</div>
+                        <div className="flex flex-wrap gap-1">
+                          {res.bestWeights.filter(w => w.weight > 0).sort((a, b) => b.weight - a.weight).map(w => (
+                            <span key={w.id} className="text-[11px] bg-white border border-gray-200 px-1.5 py-0.5 rounded-lg whitespace-nowrap">
+                              {ALGO_NAMES[w.id] || w.id} {(w.weight * 100).toFixed(0)}%
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {res.blindTotal > 0 && (
+                      <details>
+                        <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 select-none">盲测明细（{res.blindTotal} 期，最新在后）</summary>
+                        <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                          {[...res.blindDetails].reverse().map((d, i) => (
+                            <div key={i} className="flex items-center gap-2 text-xs px-2 py-1 rounded-lg bg-gray-50">
+                              <span className="text-gray-500 shrink-0">第{d.issue}期</span>
+                              <span className="font-mono text-gray-600 truncate flex-1">{d.predicted.join(' ')}</span>
+                              <span className="text-gray-400 shrink-0">实际 {d.actual}</span>
+                              {d.hit
+                                ? <span className="text-green-600 font-bold shrink-0">✓</span>
+                                : <span className="text-red-400 shrink-0">✗</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                );
+              })}
+
+              {!btRunning && btResults.length === 0 && !btError && (
+                <div className="py-8 text-center text-sm text-gray-400">设置参数后点击「开始回测」</div>
+              )}
+            </div>
           </div>
         </div>
       )}
