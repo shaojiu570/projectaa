@@ -15,10 +15,13 @@ export interface TypeBacktestResult {
   topN: number;
   lookback: number;
   totalCombos: number;
+  candidateCount: number;
+  selectedCount: number;
   searchHits: number;
   searchTotal: number;
   bestHitRate: number;
   bestWeights: { id: string; weight: number }[];
+  individualScores: { algoId: string; hits: number }[];
   blindHits: number;
   blindTotal: number;
   blindDetails: BacktestBlindDetail[];
@@ -118,11 +121,13 @@ function fuseAndRank(
 }
 
 /**
- * 对单个预测类型做回测：
- * 1) 样本内权重寻优：在 [盲测区前 lookback 期] 的滚动窗口上（每期训练只用该期之前的数据），
- *    网格/随机搜索最优算法权重组合，目标为融合结果 TopN 命中率最大化；
- * 2) 样本外盲测：用最优权重在盲测区逐期预测并统计命中率。
- * 返回的 bestWeights 可一键写入该类型的 selectedAlgorithms 权重。
+ * 对单个预测类型做回测（候选 = 统一模型库全部已启用算法，与该类型当前勾选无关）：
+ * 1) 预计算寻优窗口内每期 × 每候选算法的概率分布（每期训练只用该期之前的数据）；
+ * 2) 逐个评估候选算法单独的 TopN 命中数，取最优者作为贪心起点；
+ * 3) 贪心前向选择：每轮在剩余候选中等权试加，命中数提升才纳入，无提升即停；
+ * 4) 权重精调：对入选子集做网格/随机权重搜索（含0权重），样本内命中率最大化；
+ * 5) 样本外盲测：最优子集+权重在盲测区逐期验证。
+ * 返回 bestWeights 仅含胜出模型，可一键替换该类型的 selectedAlgorithms。
  */
 export function runTypeBacktest(
   data: DrawRecord[],
@@ -137,9 +142,10 @@ export function runTypeBacktest(
   const cats = type.categories;
   const getCat = getTypeMapper(type);
   const topN = computeTopN(type);
-  const algos = type.selectedAlgorithms.filter(ta =>
-    globalAlgos.some(ga => ga.id === ta.id && ga.enabled) && ALGO_FACTORIES[ta.id]);
-  if (algos.length === 0) throw new Error(`「${type.name}」没有可用的已选算法`);
+
+  // 候选池：统一模型库中全部已启用算法
+  const candidates = globalAlgos.filter(ga => ga.enabled && ALGO_FACTORIES[ga.id]);
+  if (candidates.length === 0) throw new Error('统一模型库中没有已启用的算法');
 
   const blindStart = data.length - blindN;
   const searchStart = blindStart - lookback;
@@ -147,35 +153,68 @@ export function runTypeBacktest(
   const seedAt = (pi: number): number =>
     (data[pi - 1]?.issue || '0').split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
 
-  // 预计算寻优区每期 × 每算法的概率分布（避免组合循环内重复计算）
-  const searchProbs: Record<string, number>[][] = [];
-  const searchActuals: string[] = [];
+  // 预计算寻优区每期 × 每候选算法的概率分布
+  const actuals: string[] = [];
+  const probsCache = new Map<string, Record<string, number>[]>();
   for (let pi = searchStart; pi < blindStart; pi++) {
     const train = data.slice(0, pi);
     const seed = seedAt(pi);
-    searchProbs.push(algos.map((ta, i) => ALGO_FACTORIES[ta.id](cats, getCat)(train, seed + i * 1000)));
-    searchActuals.push(getCat(data[pi]));
+    actuals.push(getCat(data[pi]));
+    candidates.forEach((ga, ci) => {
+      const row = ALGO_FACTORIES[ga.id](cats, getCat)(train, seed + ci * 1000);
+      let arr = probsCache.get(ga.id);
+      if (!arr) { arr = []; probsCache.set(ga.id, arr); }
+      arr.push(row);
+    });
   }
 
-  // 权重寻优
-  const combos = generateSearchWeights(algos.length);
-  let bestWeights = combos[0];
-  let bestHits = -1;
-  for (const wts of combos) {
+  const evalSubset = (ids: string[], weights: number[]): number => {
     let hits = 0;
-    for (let ri = 0; ri < searchProbs.length; ri++) {
-      if (hitsTopN(searchProbs[ri], wts, cats, searchActuals[ri], topN)) hits++;
+    for (let ri = 0; ri < actuals.length; ri++) {
+      const rows = ids.map(id => probsCache.get(id)![ri]);
+      if (hitsTopN(rows, weights, cats, actuals[ri], topN)) hits++;
     }
+    return hits;
+  };
+
+  // 阶段1a：单模型评估（贪心起点）
+  const individualScores = candidates
+    .map(ga => ({ algoId: ga.id, hits: evalSubset([ga.id], [1]) }))
+    .sort((a, b) => b.hits - a.hits);
+  const chosen: string[] = [individualScores[0].algoId];
+  let currentHits = individualScores[0].hits;
+
+  // 阶段1b：贪心前向选择（等权融合，命中率提升才加入）
+  while (chosen.length < candidates.length) {
+    let bestAdd: { id: string; hits: number } | null = null;
+    for (const ga of candidates) {
+      if (chosen.includes(ga.id)) continue;
+      const ids = [...chosen, ga.id];
+      const hits = evalSubset(ids, ids.map(() => 1 / ids.length));
+      if (hits > currentHits && (!bestAdd || hits > bestAdd.hits)) bestAdd = { id: ga.id, hits };
+    }
+    if (!bestAdd) break;
+    chosen.push(bestAdd.id);
+    currentHits = bestAdd.hits;
+  }
+
+  // 阶段2：入选子集权重精调（含0权重组合）
+  let bestWeights = chosen.map(() => 1 / chosen.length);
+  let bestHits = currentHits;
+  const combos = generateSearchWeights(chosen.length);
+  for (const wts of combos) {
+    const hits = evalSubset(chosen, wts);
     if (hits > bestHits) { bestHits = hits; bestWeights = wts; }
   }
 
-  // 盲测：最优权重逐期样本外验证
+  // 盲测：胜出子集+权重逐期样本外验证
+  const idxOf = new Map(candidates.map((ga, i) => [ga.id, i]));
   const blindDetails: BacktestBlindDetail[] = [];
   let blindHits = 0;
   for (let pi = blindStart; pi < data.length; pi++) {
     const train = data.slice(0, pi);
     const seed = seedAt(pi);
-    const probsRows = algos.map((ta, i) => ALGO_FACTORIES[ta.id](cats, getCat)(train, seed + i * 1000));
+    const probsRows = chosen.map(id => ALGO_FACTORIES[id](cats, getCat)(train, seed + idxOf.get(id)! * 1000));
     const sorted = fuseAndRank(probsRows, bestWeights, cats);
     const actual = getCat(data[pi]);
     const predicted = sorted.slice(0, topN).map(x => x.c);
@@ -190,10 +229,13 @@ export function runTypeBacktest(
     topN,
     lookback,
     totalCombos: combos.length,
+    candidateCount: candidates.length,
+    selectedCount: chosen.length,
     searchHits: bestHits,
-    searchTotal: searchProbs.length,
-    bestHitRate: searchProbs.length > 0 ? bestHits / searchProbs.length : 0,
-    bestWeights: algos.map((ta, i) => ({ id: ta.id, weight: bestWeights[i] })),
+    searchTotal: actuals.length,
+    bestHitRate: actuals.length > 0 ? bestHits / actuals.length : 0,
+    bestWeights: chosen.map((id, i) => ({ id, weight: bestWeights[i] })),
+    individualScores,
     blindHits,
     blindTotal: blindN,
     blindDetails,

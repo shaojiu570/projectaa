@@ -486,16 +486,12 @@ export default function DynamicPrediction() {
   }, [data, types, algorithms, btLookback, btBlindN]);
 
   const applyBacktestWeights = useCallback((res: TypeBacktestResult) => {
-    persistTypes(types.map(t => {
-      if (t.id !== res.typeId) return t;
-      const bw = new Map(res.bestWeights.map(w => [w.id, w.weight]));
-      return {
-        ...t,
-        selectedAlgorithms: t.selectedAlgorithms.map(sa => {
-          const w = bw.get(sa.id);
-          return w != null ? { ...sa, weight: parseFloat(w.toFixed(2)) } : sa;
-        }),
-      };
+    // 整体替换：该类型仅保留回测胜出的算法及其权重
+    persistTypes(types.map(t => t.id !== res.typeId ? t : {
+      ...t,
+      selectedAlgorithms: res.bestWeights
+        .filter(w => w.weight > 0)
+        .map(w => ({ id: w.id, weight: parseFloat(w.weight.toFixed(2)) })),
     }));
     setBtAppliedIds(prev => new Set(prev).add(res.typeId));
   }, [types]);
@@ -818,7 +814,7 @@ export default function DynamicPrediction() {
                 </button>
               </div>
               <p className="text-xs text-gray-400 leading-relaxed">
-                对每个已启用类型：在最近 N 期滚动窗口内搜索最优算法权重组合（每期训练只用该期之前的数据，融合结果 Top{`{N}`} 命中率最大化），再用最优组合在其后的盲测区逐期验证。回测数值可一键写入对应类型的算法权重。
+                对每个已启用类型：以统一模型库的全部已启用算法为候选（与该类型当前勾选无关）——先逐个评估，再贪心逐步纳入（样本内 Top{`{N}`} 命中率提升才加入），最后对入选子集做权重精调，并在盲测区逐期验证。应用后该类型将<b>仅保留胜出的算法及其权重</b>。
               </p>
 
               {btError && <div className="text-sm text-red-500">{btError}</div>}
@@ -843,7 +839,8 @@ export default function DynamicPrediction() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-gray-800 text-sm">{res.typeName}</span>
                         <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg">Top{res.topN}</span>
-                        <span className="text-xs text-gray-400">{res.totalCombos} 组权重 · 寻优 {res.searchTotal} 期</span>
+                        <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-lg">入选 {res.selectedCount}/{res.candidateCount} 算法</span>
+                        <span className="text-xs text-gray-400">精调 {res.totalCombos} 组 · 寻优 {res.searchTotal} 期</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {applied && <span className="text-xs text-green-600 font-medium">✓ 已应用</span>}
@@ -870,7 +867,7 @@ export default function DynamicPrediction() {
                         </div>
                       </div>
                       <div className="bg-gray-50 rounded-xl p-2.5 col-span-2 sm:col-span-1">
-                        <div className="text-xs text-gray-400 mb-1">最优权重（应用后生效）</div>
+                        <div className="text-xs text-gray-400 mb-1">胜出模型与权重（应用后仅保留这些）</div>
                         <div className="flex flex-wrap gap-1">
                           {res.bestWeights.filter(w => w.weight > 0).sort((a, b) => b.weight - a.weight).map(w => (
                             <span key={w.id} className="text-[11px] bg-white border border-gray-200 px-1.5 py-0.5 rounded-lg whitespace-nowrap">
@@ -880,6 +877,23 @@ export default function DynamicPrediction() {
                         </div>
                       </div>
                     </div>
+
+                    {res.individualScores.length > 0 && (
+                      <details className="mb-1">
+                        <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 select-none">候选模型单独命中（{res.individualScores.length} 个，样本内 Top{res.topN}）</summary>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {[...res.individualScores].sort((a, b) => b.hits - a.hits).map(s => {
+                            const inWin = res.bestWeights.some(w => w.id === s.algoId && w.weight > 0);
+                            return (
+                              <span key={s.algoId}
+                                className={`text-[11px] px-1.5 py-0.5 rounded-lg border whitespace-nowrap ${inWin ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-medium' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+                                {ALGO_NAMES[s.algoId] || s.algoId} {s.hits}/{res.searchTotal}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
 
                     {res.blindTotal > 0 && (
                       <details>
