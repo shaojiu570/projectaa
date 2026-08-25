@@ -532,14 +532,19 @@ export default function DynamicPrediction() {
   }, [data, types, algorithms, btLookback, btBlindN]);
 
   // 整体替换：该类型仅保留回测胜出的算法及其权重
+  // 函数式更新（基于最新 state），支持「全部应用」在同一次事件中连续替换多个类型
   const applyWeightsToType = useCallback((typeId: string, bestWeights: { id: string; weight: number }[]) => {
-    persistTypes(types.map(t => t.id !== typeId ? t : {
-      ...t,
-      selectedAlgorithms: bestWeights
-        .filter(w => w.weight > 0)
-        .map(w => ({ id: w.id, weight: parseFloat(w.weight.toFixed(2)) })),
-    }));
-  }, [types]);
+    setTypes(prev => {
+      const next = prev.map(t => t.id !== typeId ? t : {
+        ...t,
+        selectedAlgorithms: bestWeights
+          .filter(w => w.weight > 0)
+          .map(w => ({ id: w.id, weight: parseFloat(w.weight.toFixed(2)) })),
+      });
+      localStorage.setItem(TYPES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const applyBacktestWeights = useCallback((res: { typeId: string; bestWeights: { id: string; weight: number }[] }) => {
     applyWeightsToType(res.typeId, res.bestWeights);
