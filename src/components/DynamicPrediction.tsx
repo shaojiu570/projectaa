@@ -15,8 +15,27 @@ import {
 
 const RECORDS_KEY = 'lottery_dynamic_records';
 const TYPES_KEY = 'lottery_dynamic_types';
+const BT_HISTORY_KEY = 'lottery_backtest_history';
+const MAX_BT_RECORDS = 50;
 const API_BASE = 'http://localhost:3001';
 const DEFAULT_SCRIPT_REPO_PATH = 'D:\\ailiuhecai\\lottery-system';
+
+interface BacktestRecord {
+  id: string;
+  timestamp: string;
+  typeId: string;
+  typeName: string;
+  topN: number;
+  lookback: number;
+  blindTotal: number;
+  candidateCount: number;
+  selectedCount: number;
+  searchHits: number;
+  searchTotal: number;
+  bestHitRate: number;
+  bestWeights: { id: string; weight: number }[];
+  blindHits: number;
+}
 
 const ALGO_NAMES: Record<string, string> = {
   hot: '热度', cold: '遗漏', cycle: '周期', markov: '马尔科夫',
@@ -467,6 +486,10 @@ export default function DynamicPrediction() {
   const [btResults, setBtResults] = useState<TypeBacktestResult[]>([]);
   const [btError, setBtError] = useState('');
   const [btAppliedIds, setBtAppliedIds] = useState<Set<string>>(new Set());
+  const [btHistory, setBtHistory] = useState<BacktestRecord[]>(() => {
+    try { return loadFromStorage<BacktestRecord[]>(BT_HISTORY_KEY) || []; } catch { return []; }
+  });
+  const [showBtHistory, setShowBtHistory] = useState(false);
 
   const handleBacktest = useCallback(() => {
     if (data.length < 30) { alert('历史数据不足（至少 30 期）'); return; }
@@ -480,21 +503,60 @@ export default function DynamicPrediction() {
           catch (err: any) { console.error(err); }
         });
         setBtResults(results);
+        // 每次回测自动保存记录（每类型一条，最多保留 MAX_BT_RECORDS 条）
+        const nowIso = new Date().toISOString();
+        const newRecs: BacktestRecord[] = results.map(r => ({
+          id: `${Date.now()}_${r.typeId}`,
+          timestamp: nowIso,
+          typeId: r.typeId,
+          typeName: r.typeName,
+          topN: r.topN,
+          lookback: r.lookback,
+          blindTotal: r.blindTotal,
+          candidateCount: r.candidateCount,
+          selectedCount: r.selectedCount,
+          searchHits: r.searchHits,
+          searchTotal: r.searchTotal,
+          bestHitRate: r.bestHitRate,
+          bestWeights: r.bestWeights,
+          blindHits: r.blindHits,
+        }));
+        setBtHistory(prev => {
+          const next = [...newRecs, ...prev].slice(0, MAX_BT_RECORDS);
+          saveToStorage(next, BT_HISTORY_KEY);
+          return next;
+        });
       } catch (e: any) { setBtError(e?.message || '回测失败'); }
       setBtRunning(false);
     }, 30);
   }, [data, types, algorithms, btLookback, btBlindN]);
 
-  const applyBacktestWeights = useCallback((res: TypeBacktestResult) => {
-    // 整体替换：该类型仅保留回测胜出的算法及其权重
-    persistTypes(types.map(t => t.id !== res.typeId ? t : {
+  // 整体替换：该类型仅保留回测胜出的算法及其权重
+  const applyWeightsToType = useCallback((typeId: string, bestWeights: { id: string; weight: number }[]) => {
+    persistTypes(types.map(t => t.id !== typeId ? t : {
       ...t,
-      selectedAlgorithms: res.bestWeights
+      selectedAlgorithms: bestWeights
         .filter(w => w.weight > 0)
         .map(w => ({ id: w.id, weight: parseFloat(w.weight.toFixed(2)) })),
     }));
-    setBtAppliedIds(prev => new Set(prev).add(res.typeId));
   }, [types]);
+
+  const applyBacktestWeights = useCallback((res: { typeId: string; bestWeights: { id: string; weight: number }[] }) => {
+    applyWeightsToType(res.typeId, res.bestWeights);
+    setBtAppliedIds(prev => new Set(prev).add(res.typeId));
+  }, [applyWeightsToType]);
+
+  const deleteBtRecord = useCallback((id: string) => {
+    setBtHistory(prev => {
+      const next = prev.filter(r => r.id !== id);
+      saveToStorage(next, BT_HISTORY_KEY);
+      return next;
+    });
+  }, []);
+
+  const clearBtHistory = useCallback(() => {
+    setBtHistory(() => { saveToStorage([], BT_HISTORY_KEY); return []; });
+  }, []);
 
   const applyAllBacktestWeights = useCallback(() => {
     btResults.forEach(res => applyBacktestWeights(res));
@@ -812,10 +874,69 @@ export default function DynamicPrediction() {
                   className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
                   {btRunning ? '回测中...' : '开始回测'}
                 </button>
+                <button onClick={() => setShowBtHistory(v => !v)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:bg-gray-50 transition-colors">
+                  <History className="w-3.5 h-3.5" /> 记录 ({btHistory.length})
+                </button>
               </div>
               <p className="text-xs text-gray-400 leading-relaxed">
-                对每个已启用类型：以统一模型库的全部已启用算法为候选（与该类型当前勾选无关）——先逐个评估，再贪心逐步纳入（样本内 Top{`{N}`} 命中率提升才加入），最后对入选子集做权重精调，并在盲测区逐期验证。应用后该类型将<b>仅保留胜出的算法及其权重</b>。
+                对每个已启用类型：以统一模型库的全部已启用算法为候选（与该类型当前勾选无关）——先逐个评估，再贪心逐步纳入（样本内 Top{`{N}`} 命中率提升才加入），最后对入选子集做权重精调，并在盲测区逐期验证。                应用后该类型将<b>仅保留胜出的算法及其权重</b>。
               </p>
+
+              {showBtHistory && (
+                <div className="border border-gray-100 rounded-2xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                      <History className="w-4 h-4 text-gray-400" />
+                      回测记录（{btHistory.length}）
+                      <span className="text-xs text-gray-400 font-normal">最多保留 {MAX_BT_RECORDS} 条</span>
+                    </h4>
+                    {btHistory.length > 0 && (
+                      <button onClick={clearBtHistory} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 border border-red-200 rounded-xl hover:bg-red-50">清空全部</button>
+                    )}
+                  </div>
+                  {btHistory.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-gray-400">暂无回测记录</div>
+                  ) : (
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {btHistory.map(rec => {
+                        const applied = btAppliedIds.has(rec.typeId);
+                        return (
+                          <div key={rec.id} className={`border rounded-xl p-3 ${applied ? 'border-green-200 bg-green-50/40' : 'border-gray-100'}`}>
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2 flex-wrap text-xs">
+                                <span className="font-medium text-gray-800">{rec.typeName}</span>
+                                <span className="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-lg">Top{rec.topN}</span>
+                                <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-lg">入选 {rec.selectedCount}/{rec.candidateCount}</span>
+                                <span className="text-gray-500">样本内 {rec.searchHits}/{rec.searchTotal}（{(rec.bestHitRate * 100).toFixed(0)}%）</span>
+                                <span className="text-gray-500">盲测 {rec.blindTotal > 0 ? `${rec.blindHits}/${rec.blindTotal}` : '--'}</span>
+                                <span className="text-gray-300">窗口{rec.lookback}期 · {new Date(rec.timestamp).toLocaleString()}</span>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button onClick={() => applyWeightsToType(rec.typeId, rec.bestWeights)}
+                                  title="该类型将仅保留此记录中的胜出算法及权重"
+                                  className="px-2 py-1 bg-green-600 text-white rounded-xl text-xs hover:bg-green-700 transition-colors">
+                                  应用到该类型
+                                </button>
+                                <button onClick={() => deleteBtRecord(rec.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {rec.bestWeights.filter(w => w.weight > 0).sort((a, b) => b.weight - a.weight).map(w => (
+                                <span key={w.id} className="text-[11px] bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded-lg text-gray-600 whitespace-nowrap">
+                                  {ALGO_NAMES[w.id] || w.id} {(w.weight * 100).toFixed(0)}%
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {btError && <div className="text-sm text-red-500">{btError}</div>}
 
