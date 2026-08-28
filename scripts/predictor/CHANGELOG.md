@@ -1,69 +1,36 @@
 # 六合彩预测系统 - 变更记录
 
-## [2026-07-26] 头数/尾数/五行改用独立模型 + 修复推送格式
+## 当前架构（最新）
 
-### 修改文件
+`scripts/predictor` 由前端「动态预测 → 一键推送」生成的 `config.json` **完全驱动**，使用与前端相同的 **14 个通用算法**（`hot/cold/cycle/markov/ma/condProb/bayes/apriori/rf/xgboost/lstm/genetic/rl/bandit`），**不再按号码/生肖/头/尾/五行分类型固定模型**，也不再包含旧的波色/单双/大小独立模型。
 
-#### `scripts/predictor/constants.cjs`
-- 新增 `HEAD_MODELS`（3个：head_freq/head_markov/head_trend）
-- 新增 `HEAD_CATEGORIES`（0头~4头）
-- 新增 `TAIL_MODELS`（3个：tail_freq/tail_markov/tail_trend）
-- 新增 `TAIL_CATEGORIES`（0尾~9尾）
-- 新增 `ELEMENT_MODELS`（3个：element_freq/element_markov/element_trend）
-- 新增 `ELEMENT_CATEGORIES`（金木水火土）
-- 所有新常量均已导出
-
-#### `scripts/predictor/models.cjs`
-- 新增 `simulateHeadModel(id, data, baseSeed)` — 3 个子模型：
-  - head_freq: 近期特码头数频率加权
-  - head_markov: 头数一阶马尔可夫转移矩阵
-  - head_trend: 头数间隔周期模式
-- 新增 `simulateTailModel(id, data, baseSeed)` — 3 个子模型：
-  - tail_freq: 近期特码尾数频率加权
-  - tail_markov: 尾数一阶马尔可夫转移矩阵
-  - tail_trend: 尾数间隔周期模式
-- 新增 `simulateElementModel(id, data, baseSeed)` — 3 个子模型：
-  - element_freq: 近期特码五行频率加权
-  - element_markov: 五行一阶马尔可夫转移矩阵
-  - element_trend: 五行间隔周期模式
-- 每个模型算法逻辑与前端 `src/models/head/index.ts` / `tail/index.ts` / `element/index.ts` 一致
-
-#### `scripts/predictor/predictor.cjs`
-- 新增 `fuseModels()` 通用融合函数（对应前端 `m0` 方法）
-- 头数预测：改为 `fuseModels(HEAD_MODELS, simulateHeadModel, HEAD_CATEGORIES)` 独立模型融合
-- 尾数预测：改为 `fuseModels(TAIL_MODELS, simulateTailModel, TAIL_CATEGORIES)` 独立模型融合
-- 五行预测：改为 `fuseModels(ELEMENT_MODELS, simulateElementModel, ELEMENT_CATEGORIES)` 独立模型融合
-- 移除旧的 `YEAR_ELEMENTS` 推导逻辑（从号码概率累加五行）
-- 移除旧的 `fusedNum` 推导头数/尾数逻辑
-
-#### `scripts/predictor/notifier.cjs`
-- 修复：头数/尾数 label 已含"头""尾"后缀，去掉多余的 `+'头'`/`+'尾'` 拼接
-- 修复：波色显示从 `pred.topColor`（1个）改为 `pred.colors.level1`（2个）
-- 新增：五行预测结果推送行 `🔢 五行 Top4`
-- 修复：模型数从硬编码 `19个模型` 改为动态计算（当前 13+6+3+2+2+3+3+3=35个模型）
-
-#### `scripts/predictor/index.cjs`
-- 控制台输出同步修复：波色显示2个、头尾去掉多余后缀、新增五行输出
-
-#### `scripts/auto-predict.js`
-- 同步修复与 `notifier.cjs` 相同的三个问题：波色2个、头尾后缀、动态模型数
-
-#### `.github/workflows/auto-predict.yml`
-- Cron 修改：北京时间 10:00 / 13:30 / 13:50 触发
-- 新增 `workflow_dispatch` 的 `force` 布尔输入：勾选后可跳过今日缓存强制运行，且不标记已完成
-
-### 关键逻辑变更
-
-```
-旧逻辑:
-  号码预测 → fusedNum[49] → 按位分组 → 头数/尾数概率
-  号码预测 → fusedNum[49] → YEAR_ELEMENTS查表 → 五行概率
-
-新逻辑:
-  头数: HEAD_MODELS(3个) → fuseModels → 独立结果
-  尾数: TAIL_MODELS(3个) → fuseModels → 独立结果
-  五行: ELEMENT_MODELS(3个) → fuseModels → 独立结果
+```text
+config.json (types: 任意 号码/生肖/头/尾/五行/自定义 )
+   └─ constants.cjs  EFFECTIVE_TYPES / FINAL_COUNT
+        ├─ models.cjs     runGenericAlgo(14算法) + simulateTypeModel(按类型参数化)
+        └─ predictor.cjs  fuseModels(按权重融合) + computeAdaptiveWeights(每10期自适应) + runPrediction
+             └─ index.cjs  取数→预测→控制台→notifier.cjs 多渠道推送
 ```
 
-### 模型总数
-号码(13) + 生肖(6) + 波色(3) + 大小(2) + 单双(2) + 头数(3) + 尾数(3) + 五行(3) = **35个模型**
+关键行为：
+- 每类型的算法勾选与权重 = 前端推送的 `selectedAlgorithms`（权重按总和归一化融合，TopN = `resultCount`）
+- **自适应权重**：`computeAdaptiveWeights` 每 10 期对最近 10 期逐期样本外评估（训练只用该期之前数据）统计各算法命中 → softmax → 归一化；数据不足 10 期回退默认权重
+- **生肖/五行按记录日期动态映射**：生肖按立春/农历年（`getZodiacByRecord`），五行按开奖日历年（`getElementByYear`）；目标期号码范围由 `effectiveRanges(type, targetDate)` 动态生成
+- 数据不足 100 期则失败并推送通知
+- 推送渠道：Telegram / Bark / 钉钉 / 飞书 / 企业微信（凭环境变量 `TELEGRAM_BOT_TOKEN`、`BARK_KEY`、`DINGTALK_WEBHOOK`/`SECRET`、`FEISHU_WEBHOOK`、`WEWORK_WEBHOOK_KEY`）
+
+---
+
+## 历史变更摘要
+
+### [2026-07-26] 旧版：头/尾/五行独立模型（已废弃，仅留档）
+- 曾为 `HEAD_MODELS`/`TAIL_MODELS`/`ELEMENT_MODELS` 各自独立 3 个模型（freq/markov/trend），与旧前端分区模型一致
+- 曾为波色/大小/单双独立预测，模型总数 35 个
+- **此架构已被「统一 14 通用算法 + config.json 驱动任意类型」完全取代**
+
+### 后续大改造（现行）
+- 删除分类型固定模型，改为统一 `GENERIC_ALGO_NAMES`（14 个）驱动的通用预测
+- `models.cjs` 以 `runGenericAlgo` 实现 14 个通用算法；`simulateTypeModel` 按类型 `categories + numberRanges` 参数化运行
+- `constants.cjs` 读取 `config.json` 得 `EFFECTIVE_TYPES`/`FINAL_COUNT`；无配置时回退 `defaultTypes()`（number/tail/head/element/zodiac 5 个内置类型）
+- 生肖/五行映射改为 per-record 动态（立春年生肖、日历年五行），修复旧固定 2024 基准
+- 移除「综合推荐」块，直接输出各类型 TopN 与综合 49 码
