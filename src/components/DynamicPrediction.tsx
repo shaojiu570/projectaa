@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useData } from '../stores/DataContext';
 import { useModelLibrary } from '../stores/ModelLibraryContext';
 import { runPrediction, BUILTIN_TYPES, autoTuneWeights, computeTopN, zodiacOfRecord, elementOfRecord } from '../models/dynamic';
-import { runTypeBacktest, TypeBacktestResult } from '../engine/backtest';
+import { runExhaustiveBacktest, TypeBacktestResult } from '../engine/backtest';
 import { DrawRecord } from '../data/types';
 import { PredictionTypeConfig, DynamicPredictionRecord } from '../models/dynamic/types';
 import { calculateNextIssue, calculateNextDate } from '../utils/nextIssueCalculator';
@@ -490,45 +490,51 @@ export default function DynamicPrediction() {
     try { return loadFromStorage<BacktestRecord[]>(BT_HISTORY_KEY) || []; } catch { return []; }
   });
   const [showBtHistory, setShowBtHistory] = useState(false);
+  const [btProgress, setBtProgress] = useState({ phase: 0, current: 0, total: 0 });
 
-  const handleBacktest = useCallback(() => {
+  const handleBacktest = useCallback(async () => {
     if (data.length < 30) { alert('历史数据不足（至少 30 期）'); return; }
     if (types.filter(t => t.enabled).length === 0) { alert('请至少启用一个预测类型'); return; }
-    setBtRunning(true); setBtError(''); setBtResults([]); setBtAppliedIds(new Set());
-    setTimeout(() => {
-      try {
-        const results: TypeBacktestResult[] = [];
-        types.filter(t => t.enabled).forEach(t => {
-          try { results.push(runTypeBacktest(data, t, algorithms, { lookback: btLookback, blindN: btBlindN })); }
-          catch (err: any) { console.error(err); }
-        });
-        setBtResults(results);
-        // 每次回测自动保存记录（每类型一条，最多保留 MAX_BT_RECORDS 条）
-        const nowIso = new Date().toISOString();
-        const newRecs: BacktestRecord[] = results.map(r => ({
-          id: `${Date.now()}_${r.typeId}`,
-          timestamp: nowIso,
-          typeId: r.typeId,
-          typeName: r.typeName,
-          topN: r.topN,
-          lookback: r.lookback,
-          blindTotal: r.blindTotal,
-          candidateCount: r.candidateCount,
-          selectedCount: r.selectedCount,
-          searchHits: r.searchHits,
-          searchTotal: r.searchTotal,
-          bestHitRate: r.bestHitRate,
-          bestWeights: r.bestWeights,
-          blindHits: r.blindHits,
-        }));
-        setBtHistory(prev => {
-          const next = [...newRecs, ...prev].slice(0, MAX_BT_RECORDS);
-          saveToStorage(next, BT_HISTORY_KEY);
-          return next;
-        });
-      } catch (e: any) { setBtError(e?.message || '回测失败'); }
-      setBtRunning(false);
-    }, 30);
+    setBtRunning(true); setBtError(''); setBtResults([]); setBtAppliedIds(new Set()); setBtProgress({ phase: 0, current: 0, total: 0 });
+    const enabledTypes = types.filter(t => t.enabled);
+    try {
+      const results: TypeBacktestResult[] = [];
+      for (let i = 0; i < enabledTypes.length; i++) {
+        const t = enabledTypes[i];
+        try {
+          const res = await runExhaustiveBacktest(data, t, algorithms, { lookback: btLookback, blindN: btBlindN },
+            (phase, current, total) => setBtProgress({ phase, current, total }),
+          );
+          results.push(res);
+          setBtResults([...results]);
+        } catch (err: any) { console.error(err); }
+      }
+      setBtResults(results);
+      // 每次回测自动保存记录（每类型一条，最多保留 MAX_BT_RECORDS 条）
+      const nowIso = new Date().toISOString();
+      const newRecs: BacktestRecord[] = results.map(r => ({
+        id: `${Date.now()}_${r.typeId}`,
+        timestamp: nowIso,
+        typeId: r.typeId,
+        typeName: r.typeName,
+        topN: r.topN,
+        lookback: r.lookback,
+        blindTotal: r.blindTotal,
+        candidateCount: r.candidateCount,
+        selectedCount: r.selectedCount,
+        searchHits: r.searchHits,
+        searchTotal: r.searchTotal,
+        bestHitRate: r.bestHitRate,
+        bestWeights: r.bestWeights,
+        blindHits: r.blindHits,
+      }));
+      setBtHistory(prev => {
+        const next = [...newRecs, ...prev].slice(0, MAX_BT_RECORDS);
+        saveToStorage(next, BT_HISTORY_KEY);
+        return next;
+      });
+    } catch (e: any) { setBtError(e?.message || '回测失败'); }
+    setBtRunning(false); setBtProgress({ phase: 0, current: 0, total: 0 });
   }, [data, types, algorithms, btLookback, btBlindN]);
 
   // 整体替换：该类型仅保留回测胜出的算法及其权重
@@ -954,7 +960,23 @@ export default function DynamicPrediction() {
               )}
 
               {btRunning && (
-                <div className="py-8 text-center text-sm text-gray-500">正在对全部启用类型进行权重寻优与盲测…</div>
+                <div className="py-6 text-center">
+                  <div className="text-sm text-gray-500 mb-3">
+                    {btProgress.phase === 0 && '正在初始化…'}
+                    {btProgress.phase === 1 && `正在预计算 ${btProgress.total} 期模型分数…`}
+                    {btProgress.phase === 2 && `正在穷举全部 ${btProgress.total} 种模型组合（N+N）…`}
+                    {btProgress.phase === 3 && '正在权重精调与盲测…'}
+                  </div>
+                  {btProgress.total > 0 && (
+                    <div className="w-full max-w-md mx-auto h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full transition-all duration-150"
+                        style={{ width: `${Math.min(100, btProgress.total > 0 ? (btProgress.current / btProgress.total) * 100 : 0)}%` }} />
+                    </div>
+                  )}
+                  {btProgress.total > 0 && (
+                    <div className="text-xs text-gray-400 mt-2">{Math.min(btProgress.current, btProgress.total).toLocaleString()} / {btProgress.total.toLocaleString()}</div>
+                  )}
+                </div>
               )}
 
               {!btRunning && btResults.map(res => {
@@ -966,7 +988,7 @@ export default function DynamicPrediction() {
                         <span className="font-semibold text-gray-800 text-sm">{res.typeName}</span>
                         <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg">Top{res.topN}</span>
                         <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-lg">入选 {res.selectedCount}/{res.candidateCount} 算法</span>
-                        <span className="text-xs text-gray-400">精调 {res.totalCombos} 组 · 寻优 {res.searchTotal} 期</span>
+                        <span className="text-xs text-gray-400">穷举 2^{res.candidateCount}-1 组合 · 寻优 {res.searchTotal} 期</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {applied && <span className="text-xs text-green-600 font-medium">✓ 已应用</span>}
