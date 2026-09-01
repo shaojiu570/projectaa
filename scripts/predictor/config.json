@@ -4,67 +4,31 @@
       "id": "number",
       "name": "号码类",
       "resultCount": 30,
-      "topN": 10,
+      "topN": 30,
       "selectedAlgorithms": [
         {
-          "weight": 0.02
-        },
-        {
-          "weight": 0.02
-        },
-        {
-          "weight": 0.02
-        },
-        {
-          "weight": 0.02
-        },
-        {
-          "id": "hot",
-          "weight": 0.02
-        },
-        {
           "id": "cold",
-          "weight": 0.02
-        },
-        {
-          "id": "cycle",
-          "weight": 0.02
+          "weight": 0.16
         },
         {
           "id": "markov",
-          "weight": 0.02
-        },
-        {
-          "id": "ma",
-          "weight": 0.31
-        },
-        {
-          "id": "lstm",
-          "weight": 0.02
-        },
-        {
-          "id": "xgboost",
-          "weight": 0.23
-        },
-        {
-          "id": "rf",
-          "weight": 0.02
-        },
-        {
-          "id": "bayes",
-          "weight": 0.31
-        },
-        {
-          "id": "rl",
-          "weight": 0.25
+          "weight": 0.21
         },
         {
           "id": "condProb",
-          "weight": 0.25
+          "weight": 0.2
         },
         {
-          "id": "apriori",
-          "weight": 0.25
+          "id": "bayes",
+          "weight": 0.11
+        },
+        {
+          "id": "lstm",
+          "weight": 0.12
+        },
+        {
+          "id": "rl",
+          "weight": 0.2
         }
       ],
       "categories": [
@@ -277,51 +241,19 @@
       "topN": 8,
       "selectedAlgorithms": [
         {
-          "weight": 0.02
-        },
-        {
-          "weight": 0.02
-        },
-        {
-          "weight": 0.02
-        },
-        {
-          "weight": 0.02
-        },
-        {
-          "id": "hot",
-          "weight": 0.13
-        },
-        {
           "id": "cold",
-          "weight": 0.09
-        },
-        {
-          "id": "cycle",
-          "weight": 0.13
-        },
-        {
-          "id": "rf",
-          "weight": 0.17
-        },
-        {
-          "id": "xgboost",
-          "weight": 0.09
-        },
-        {
-          "id": "bayes",
-          "weight": 0.3
+          "weight": 0.25
         },
         {
           "id": "markov",
           "weight": 0.25
         },
         {
-          "id": "ma",
+          "id": "genetic",
           "weight": 0.25
         },
         {
-          "id": "condProb",
+          "id": "bandit",
           "weight": 0.25
         }
       ],
@@ -418,48 +350,12 @@
       "topN": 4,
       "selectedAlgorithms": [
         {
-          "weight": 0.01
-        },
-        {
-          "weight": 0.01
-        },
-        {
-          "weight": 0.01
-        },
-        {
-          "weight": 0.01
-        },
-        {
-          "id": "hot",
-          "weight": 0.14
-        },
-        {
-          "id": "cycle",
-          "weight": 0.21
-        },
-        {
-          "id": "markov",
-          "weight": 0.14
-        },
-        {
-          "id": "ma",
-          "weight": 0.17
-        },
-        {
           "id": "bayes",
-          "weight": 0.12
+          "weight": 0.7
         },
         {
-          "id": "xgboost",
-          "weight": 0.17
-        },
-        {
-          "id": "condProb",
-          "weight": 0.25
-        },
-        {
-          "id": "lstm",
-          "weight": 0.25
+          "id": "rf",
+          "weight": 0.3
         }
       ],
       "categories": [
@@ -540,56 +436,24 @@
       "topN": 4,
       "selectedAlgorithms": [
         {
-          "weight": 0.01
-        },
-        {
-          "weight": 0.01
-        },
-        {
-          "weight": 0.01
-        },
-        {
-          "weight": 0.01
-        },
-        {
-          "id": "cold",
-          "weight": 0.17
-        },
-        {
           "id": "hot",
-          "weight": 0.14
+          "weight": 0.2
         },
         {
           "id": "markov",
-          "weight": 0.25
-        },
-        {
-          "id": "cond",
-          "weight": 0.01
-        },
-        {
-          "id": "xgboost",
-          "weight": 0.14
-        },
-        {
-          "id": "rl",
-          "weight": 0.23
-        },
-        {
-          "id": "ma",
-          "weight": 0.25
+          "weight": 0.2
         },
         {
           "id": "bayes",
-          "weight": 0.25
-        },
-        {
-          "id": "condProb",
-          "weight": 0.25
+          "weight": 0.2
         },
         {
           "id": "apriori",
-          "weight": 0.25
+          "weight": 0.2
+        },
+        {
+          "id": "rf",
+          "weight": 0.2
         }
       ],
       "categories": [
@@ -670,52 +534,28 @@
       "topN": 9,
       "selectedAlgorithms": [
         {
-          "weight": 0.03
-        },
-        {
-          "weight": 0.03
-        },
-        {
-          "weight": 0.03
-        },
-        {
-          "weight": 0.03
-        },
-        {
-          "id": "markov",
-          "weight": 0.05
-        },
-        {
           "id": "hot",
-          "weight": 0.2
-        },
-        {
-          "id": "lstm",
-          "weight": 0.2
-        },
-        {
-          "id": "xgboost",
-          "weight": 0.35
-        },
-        {
-          "id": "rf",
-          "weight": 0.05
+          "weight": 0.17
         },
         {
           "id": "apriori",
-          "weight": 0.25
+          "weight": 0.17
         },
         {
-          "id": "ma",
-          "weight": 0.25
+          "id": "rf",
+          "weight": 0.17
         },
         {
-          "id": "condProb",
-          "weight": 0.25
+          "id": "lstm",
+          "weight": 0.17
         },
         {
-          "id": "bayes",
-          "weight": 0.25
+          "id": "genetic",
+          "weight": 0.17
+        },
+        {
+          "id": "rl",
+          "weight": 0.17
         }
       ],
       "categories": [
@@ -809,115 +649,8 @@
       ],
       "isBuiltin": true,
       "autoWeight": false
-    },
-    {
-      "id": "color",
-      "name": "波色类",
-      "resultCount": 2,
-      "topN": 3,
-      "selectedAlgorithms": [
-        {},
-        {},
-        {},
-        {},
-        {
-          "id": "cycle",
-          "weight": 0.25
-        },
-        {
-          "id": "markov",
-          "weight": 0.25
-        },
-        {
-          "id": "bayes",
-          "weight": 0.25
-        },
-        {
-          "id": "apriori",
-          "weight": 0.25
-        },
-        {
-          "id": "rf",
-          "weight": 0.25
-        },
-        {
-          "id": "lstm",
-          "weight": 0.25
-        },
-        {
-          "id": "xgboost",
-          "weight": 0.25
-        },
-        {
-          "id": "ma",
-          "weight": 0.25
-        }
-      ],
-      "categories": [
-        "红波",
-        "蓝波",
-        "绿波"
-      ],
-      "numberRanges": [
-        [
-          1,
-          2,
-          7,
-          8,
-          12,
-          13,
-          18,
-          19,
-          23,
-          24,
-          29,
-          30,
-          34,
-          35,
-          40,
-          45,
-          46
-        ],
-        [
-          3,
-          4,
-          9,
-          10,
-          14,
-          15,
-          20,
-          25,
-          26,
-          31,
-          36,
-          37,
-          41,
-          42,
-          47,
-          48
-        ],
-        [
-          5,
-          6,
-          11,
-          16,
-          17,
-          21,
-          22,
-          27,
-          28,
-          32,
-          33,
-          38,
-          39,
-          43,
-          44,
-          49
-        ]
-      ],
-      "isBuiltin": true
     }
   ],
   "finalCount": 10,
-  "updatedAt": "2026-08-07T02:26:09.381Z"
+  "updatedAt": "2026-09-01T16:30:18.969Z"
 }
