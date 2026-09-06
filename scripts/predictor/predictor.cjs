@@ -29,21 +29,6 @@ function fuseModels(data, baseSeed, weights, type, seedOffset) {
 }
 
 /**
- * 判断模型在某一期（test）是否命中：用 train（该期之前的数据）预测，取 TopN 看是否包含实际开奖
- */
-function modelHitsAt(id, train, seed, test, type) {
-  const getCat = buildTypeMapper(type);
-  const probs = simulateTypeModel(id, type, train, seed);
-  const topN = type.topN || Math.max(type.resultCount || 1, 1);
-  const top = type.categories
-    .map(c => ({ c, p: probs[c] || 0 }))
-    .sort((a, b) => b.p - a.p)
-    .slice(0, topN)
-    .map(x => x.c);
-  return top.includes(getCat(test));
-}
-
-/**
  * 预测目标期的号码映射：内置生肖/五行按目标期日期动态生成（生肖按立春/农历年、五行按日历年），
  * 其余类型（号码/头/尾/自定义）用推送配置中的 numberRanges。
  */
