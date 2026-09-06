@@ -1,6 +1,6 @@
 /**
- * 六合彩预测系统 - 数据获取 v2
- * 多数据源 + 灵活解析 + 容灾
+ * 六合彩预测系统 - 数据获取
+ * 多数据源 + JSON API + 容灾
  */
 
 const fs = require('fs');
@@ -13,50 +13,82 @@ const REFRESH = process.argv.includes('--refresh');
 
 const DATA_SOURCES = [
   {
-    name: '澳门六合彩',
-    defaultUrl: 'https://38.11.29.1:50001/historys/mo/',
-    buildYearUrls: (year) => [
-      `${year}.html`,
-    ],
+    name: '开奖1868-香港六合彩',
+    type: 'api',
+    apiUrl: 'https://www.kj1868.cc/openapi/drawLottery/xg6/last.kj',
     defaultYearStart: 2021,
+    pageSize: 100,
   },
   {
-    name: '123720彩票网',
-    defaultUrl: 'https://kj.123720c.com/kj/',
-    buildYearUrls: (year) => [
-      `${year}/`,
-      `?year=${year}`,
-      `index_${year}.html`,
-      `history/${year}.html`,
-      `${year}.html`,
-    ],
-    defaultYearStart: 2020,
+    name: '开奖1868-澳门六合彩',
+    type: 'api',
+    apiUrl: 'https://www.kj1868.cc/openapi/drawLottery/am6/last.kj',
+    defaultYearStart: 2021,
+    pageSize: 100,
   },
 ];
 
-// 环境变量 DATA_SOURCE 可覆盖或添加自定义源
-const ENV_SOURCE_URL = process.env.DATA_SOURCE;
-if (ENV_SOURCE_URL && !DATA_SOURCES.find(s => s.defaultUrl === ENV_SOURCE_URL)) {
-  DATA_SOURCES.push({
-    name: '自定义源',
-    defaultUrl: ENV_SOURCE_URL,
-    buildYearUrls: (year) => [
-      `${year}/`,
-      `?year=${year}`,
-      `index_${year}.html`,
-      `history/${year}.html`,
-      `${year}.html`,
-    ],
-    defaultYearStart: 2020,
-  });
+// ====================== API 解析 ======================
+
+function parseApiData(json, year) {
+  const records = [];
+  if (json.status !== '10' || !json.data?.data) return records;
+
+  for (const item of json.data.data) {
+    const issue = item.period || '';
+    const dateStr = item.lottery_date || '';
+    const nums = (item.numbers || '').split(',').map(n => parseInt(n.trim())).filter(n => n >= 1 && n <= 49);
+
+    if (issue && dateStr && nums.length >= 7) {
+      records.push({
+        issue: issue,
+        date: dateStr,
+        normals: nums.slice(0, 6),
+        special: nums[6],
+      });
+    }
+  }
+  return records;
 }
 
-// ====================== 解析引擎 ======================
+async function fetchFromApi(source, year) {
+  const records = [];
+  let page = 1;
+  const maxPages = 20;
 
-/**
- * 方案1：块结构解析（kj-tit + kj-box）
- * 支持 <span> / <font> / 任意标签包裹期号
- */
+  while (page <= maxPages) {
+    const url = `${source.apiUrl}?page=${page}&pageSize=${source.pageSize}`;
+    try {
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!resp.ok) break;
+
+      const json = await resp.json();
+      if (json.status !== '10' || !json.data?.data?.length) break;
+
+      const batch = parseApiData(json, year);
+      const yearStr = String(year);
+      const yearRecords = batch.filter(r => r.issue.startsWith(yearStr));
+
+      if (yearRecords.length > 0) {
+        records.push(...yearRecords);
+        if (batch.length < source.pageSize) break;
+        page++;
+      } else {
+        break;
+      }
+    } catch (e) {
+      console.log(`   API 请求失败 (page ${page}): ${e.message}`);
+      break;
+    }
+  }
+  return records;
+}
+
+// ====================== HTML 解析（备用） ======================
+
 function parseBlockStructure(html) {
   const records = [];
   const cleanHtml = html.replace(/\r\n/g, '').replace(/\n/g, '');
@@ -91,121 +123,6 @@ function parseBlockStructure(html) {
   return records;
 }
 
-/**
- * 方案2：表格结构解析（<table> 含 tr/td + 年月日 + ball 类名）
- */
-function parseTableStructure(html) {
-  const records = [];
-  const cleanHtml = html.replace(/\r\n/g, '').replace(/\n/g, '');
-
-  // 查找包含开奖号码的表格行
-  const rowRegex = /<tr[^>]*>[\s\S]*?<td[^>]*>[\s\S]*?(\d{4})[年-](\d{1,2})[月-](\d{1,2})[\s\S]*?<\/td>[\s\S]*?<td[^>]*>[\s\S]*?第(\d+)期[\s\S]*?<\/td>[\s\S]*?<td[^>]*>[\s\S]*?(?:\d+[\s\S]*?){7,}[\s\S]*?<\/td>[\s\S]*?<\/tr>/gi;
-  let rowMatch;
-  while ((rowMatch = rowRegex.exec(cleanHtml)) !== null) {
-    const year = parseInt(rowMatch[1]);
-    const month = parseInt(rowMatch[2]);
-    const day = parseInt(rowMatch[3]);
-    const issueNum = rowMatch[4].padStart(3, '0');
-
-    const numbers = [];
-    const numRegex = /(\d{1,2})/g;
-    // 从行内提取7个号码
-    const cellText = rowMatch[0];
-    const allNums = [];
-    let nm;
-    while ((nm = numRegex.exec(cellText)) !== null) {
-      const n = parseInt(nm[1]);
-      if (n >= 1 && n <= 49) allNums.push(n);
-    }
-    // 尝试从 ball class 提取
-    const ballRegex = /class="[^"]*ball[^"]*"[^>]*>\s*(\d+)\s*</g;
-    let bm;
-    while ((bm = ballRegex.exec(rowMatch[0])) !== null) {
-      const n = parseInt(bm[1]);
-      if (n >= 1 && n <= 49) numbers.push(n);
-    }
-    // 回退到所有数字取最后7个
-    if (numbers.length < 7) {
-      const candidates = allNums.filter(n => !numbers.includes(n));
-      numbers.push(...candidates.slice(0, 7 - numbers.length));
-    }
-
-    if (numbers.length >= 7) {
-      records.push({
-        issue: `${year}${issueNum}`,
-        date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-        normals: numbers.slice(0, 6),
-        special: numbers[6],
-      });
-    }
-  }
-  return records;
-}
-
-/**
- * 方案3：平铺扫描（所有数字+日期的全局匹配，不依赖特定结构）
- */
-function parseFlatScan(html) {
-  const records = [];
-  const ballRegex = /class="[^"]*ball[^"]*"[^>]*>\s*(\d+)\s*</g;
-  const allNumbers = [];
-  let m;
-  while ((m = ballRegex.exec(html)) !== null) {
-    const n = parseInt(m[1]);
-    if (n >= 1 && n <= 49) allNumbers.push(n);
-  }
-
-  const dateIssueRegex = /(\d{4})[年-](\d{1,2})[月-](\d{1,2})[^\d]*?第(\d+)[期期]/g;
-  const meta = [];
-  while ((m = dateIssueRegex.exec(html)) !== null) {
-    meta.push({
-      date: `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`,
-      issue: m[1] + m[4].padStart(3, '0'),
-    });
-  }
-
-  if (allNumbers.length >= 7) {
-    const draws = Math.floor(allNumbers.length / 7);
-    for (let i = 0; i < draws; i++) {
-      const nums = allNumbers.slice(i * 7, (i + 1) * 7);
-      const special = nums.pop();
-      const mi = meta[meta.length - 1 - i] || { date: '', issue: `HK${String(draws - i).padStart(4, '0')}` };
-      records.push({ issue: mi.issue, date: mi.date, normals: [...nums], special });
-    }
-    records.reverse();
-  }
-  return records;
-}
-
-/**
- * 尝试所有解析方案
- */
-function extractRecords(html) {
-  // 方案1：块结构（最精确）
-  let records = parseBlockStructure(html);
-  if (records.length > 0) {
-    console.log(`   块结构解析 → ${records.length} 条`);
-    return records;
-  }
-
-  // 方案2：表格结构
-  records = parseTableStructure(html);
-  if (records.length > 0) {
-    console.log(`   表格结构解析 → ${records.length} 条`);
-    return records;
-  }
-
-  // 方案3：平铺扫描（兜底）
-  records = parseFlatScan(html);
-  if (records.length > 0) {
-    console.log(`   平铺扫描解析 → ${records.length} 条`);
-    return records;
-  }
-
-  console.log('   ⚠️ 无法解析数据');
-  return [];
-}
-
 // ====================== 缓存 ======================
 
 function loadFromCache() {
@@ -233,22 +150,6 @@ function saveToCache(records) {
   }
 }
 
-// ====================== 网络请求 ======================
-
-async function fetchUrl(url, baseUrl) {
-  const fullUrl = url.startsWith('http') ? url : baseUrl + url;
-  try {
-    const resp = await fetch(fullUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!resp.ok) return null;
-    const html = await resp.text();
-    if (html.length > 1000) return html;
-  } catch (e) {}
-  return null;
-}
-
 // ====================== 主流程 ======================
 
 async function fetchData() {
@@ -259,43 +160,26 @@ async function fetchData() {
 
   const currentYear = new Date().getFullYear();
   const allRecords = [];
-  const usedSources = [];
 
   for (const source of DATA_SOURCES) {
-    console.log(`\n🌐 尝试数据源: ${source.name} (${source.defaultUrl})`);
+    console.log(`\n🌐 尝试数据源: ${source.name}`);
 
-    // 默认页面
-    const defaultHtml = await fetchUrl(source.defaultUrl, '');
-    if (defaultHtml) {
-      const records = extractRecords(defaultHtml);
-      for (const r of records) {
-        if (!allRecords.find(x => x.issue === r.issue)) allRecords.push(r);
-      }
-    }
-
-    // 逐年份
-    const startYear = source.defaultYearStart || 2020;
-    for (let year = currentYear; year >= startYear; year--) {
-      const urls = source.buildYearUrls(year);
-      let found = false;
-      for (const url of urls) {
-        const html = await fetchUrl(url, source.defaultUrl);
-        if (!html) continue;
-        const records = extractRecords(html);
-        if (records.length > 0) {
-          let added = 0;
-          for (const r of records) {
-            if (!allRecords.find(x => x.issue === r.issue)) {
-              allRecords.push(r);
-              added++;
-            }
+    if (source.type === 'api') {
+      for (let year = currentYear; year >= source.defaultYearStart; year--) {
+        const records = await fetchFromApi(source, year);
+        let added = 0;
+        for (const r of records) {
+          if (!allRecords.find(x => x.issue === r.issue)) {
+            allRecords.push(r);
+            added++;
           }
+        }
+        if (records.length > 0) {
           console.log(`   ${year}年 → ${records.length} 条${added > 0 ? `，新增${added}` : '（全部重复）'}`);
-          found = true;
-          break;
+        } else {
+          console.log(`   ${year}年 → 无数据`);
         }
       }
-      if (!found) console.log(`   ${year}年 → 无数据`);
     }
 
     if (allRecords.length >= 100) {

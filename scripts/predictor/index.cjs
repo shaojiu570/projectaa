@@ -6,7 +6,7 @@
 const { runPrediction } = require('./predictor.cjs');
 const { fetchData } = require('./fetcher.cjs');
 const { notify, formatMessage } = require('./notifier.cjs');
-const { formatDate, getZodiacOfRecord, getElementOfRecord } = require('./utils.cjs');
+const { formatDate, getZodiacOfRecord, getElementOfRecord, getColor } = require('./utils.cjs');
 
 /**
  * 主函数
@@ -54,11 +54,13 @@ async function main() {
   console.log(pred.finalNumbers.slice(0, pred.finalCount).map(n => String(n.number).padStart(2, '0')).join(', '));
   console.log('');
 
-  // 最近5期
-  console.log('【最近5期开奖】');
+  // 最近5期（含波色/五行）
+  console.log('【最近5期（含波色/五行）】');
   const last5 = data.slice(-5).reverse();
   last5.forEach(r => {
-    console.log(`  ${r.issue}期: ${r.special} - ${getZodiacOfRecord(r)} ${getElementOfRecord(r)}`);
+    const color = getColor(r.special);
+    const element = getElementOfRecord(r);
+    console.log(`  ${r.issue}期: ${r.special} - ${getZodiacOfRecord(r)} ${color} ${element}`);
   });
   console.log('');
 

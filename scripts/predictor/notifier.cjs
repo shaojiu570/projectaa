@@ -211,10 +211,10 @@ async function notify(title, content) {
 
 /**
  * 格式化预测结果为推送消息
- * 格式与本地前端保持一致
+ * 格式与本地前端保持一致，含波色/五行属性
  */
 function formatMessage(pred, data) {
-  const { formatDate, getZodiacOfRecord } = require('./utils.cjs');
+  const { formatDate, getZodiacOfRecord, getElementOfRecord, getColor } = require('./utils.cjs');
   
   const lastRecord = data[data.length - 1];
   const lastIssueNum = lastRecord ? parseInt(lastRecord.issue.slice(-3)) : 0;
@@ -231,7 +231,13 @@ function formatMessage(pred, data) {
 
   pred.types.forEach(t => {
     const text = t.predictions
-      .map(p => t.id === 'number' ? String(p.category).padStart(2, '0') : p.category)
+      .map(p => {
+        if (t.id === 'number') {
+          const num = String(p.category).padStart(2, '0');
+          return num;
+        }
+        return p.category;
+      })
       .join(' ');
     lines.push(`📊 ${t.name}（${t.predictions.length}个）：`, text, '');
   });
@@ -239,10 +245,16 @@ function formatMessage(pred, data) {
   lines.push(`🎯 推荐号码（${pred.finalCount}个）：`);
   lines.push(pred.finalNumbers.slice(0, pred.finalCount).map(n => String(n.number).padStart(2, '0')).join(' '));
 
+  // 最近5期带波色和五行
+  lines.push('');
+  lines.push('最近5期（含波色/五行）');
+  last5.forEach(r => {
+    const color = getColor(r.special);
+    const element = getElementOfRecord(r);
+    lines.push(`> ${r.issue.slice(-3)}期 ${r.special} ${getZodiacOfRecord(r)} ${color} ${element}`);
+  });
+
   lines.push(
-    '',
-    '最近5期',
-    ...last5.map(r => `> ${r.issue.slice(-3)}期 ${r.special} ${getZodiacOfRecord(r)}`),
     '',
     `_${formatDate(new Date())} | ${data.length}期数据 | ${pred.types.length}种类型_`,
   );

@@ -60,57 +60,22 @@ function effectiveRanges(type, targetDate) {
 }
 
 /**
- * 计算自适应权重：每 10 期根据各模型命中情况调整模型权重
- * 对最近 WINDOW=10 期逐期样本外评估（训练只用该期之前的数据），
- * 统计每个模型 TopN 是否命中实际开奖 → softmax 放大命中率 → 归一化为权重。
- * 数据不足 10 期时回退为推送/默认权重。
- */
-function computeAdaptiveWeights(data, models, type) {
-  const WINDOW = 10;
-  if (models.length === 0 || data.length < WINDOW + 1) {
-    return models.map(m => ({ id: m.id, weight: m.weight }));
-  }
-
-  const testStart = data.length - WINDOW;
-  const hits = {};
-  models.forEach(m => hits[m.id] = 0);
-
-  for (let pi = testStart; pi < data.length; pi++) {
-    const train = data.slice(0, pi);
-    const test = data[pi];
-    if (train.length === 0) continue;
-    const ls = train[train.length - 1]?.issue || '0';
-    const seed = ls.split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
-    models.forEach((m, i) => {
-      if (modelHitsAt(m.id, train, seed + i * 1000, test, type)) hits[m.id]++;
-    });
-  }
-
-  const expScores = models.map(m => ({ id: m.id, exp: Math.exp((hits[m.id] / WINDOW) * 5) }));
-  const totalExp = expScores.reduce((s, m) => s + m.exp, 0);
-
-  return expScores.map(m => ({ id: m.id, weight: m.exp / totalExp }));
-}
-
-/**
- * 执行预测
+ * 执行预测（使用推送的固定权重，不再自动调整）
  */
 function runPrediction(data) {
   const lastIssue = data[data.length - 1]?.issue || '0';
   const baseSeed = lastIssue.split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
 
-  // 估算下期开奖日期：最后一期 +1 天
   const targetDate = new Date(new Date(data[data.length - 1]?.date || Date.now()));
   targetDate.setDate(targetDate.getDate() + 1);
 
   const enabled = EFFECTIVE_TYPES.filter(t => t.enabled !== false);
 
-  // 各类型预测：每10期自适应权重 → 多算法融合 → 推荐 resultCount 个类别
+  // 各类型预测：使用推送的固定权重
   const perType = enabled.map((type, typeIdx) => {
     const algos = (type.selectedAlgorithms || []).filter(sa => sa && sa.id);
     if (algos.length === 0) return null;
-    const weights = computeAdaptiveWeights(data, algos, type);
-    const sorted = fuseModels(data, baseSeed, weights, type, 1000 + typeIdx * 100);
+    const sorted = fuseModels(data, baseSeed, algos, type, 1000 + typeIdx * 100);
     const count = Math.max(1, Math.min(type.resultCount || 5, sorted.length));
     return {
       id: type.id,
