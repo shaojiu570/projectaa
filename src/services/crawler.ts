@@ -94,12 +94,83 @@ const DATA_SOURCES = [
     ],
     validation: (text: string) => text.length > 1000,
   },
+  {
+    name: '开奖1868-API',
+    type: 'api' as const,
+    apiUrl: 'https://www.kj1868.cc/openapi/drawLottery/nam6/last.kj',
+    pageSize: 100,
+  },
 ];
+
+async function fetchFromApi(source: typeof DATA_SOURCES[0], year: number): Promise<LotteryRecord[] | null> {
+  if (source.type !== 'api' || !source.apiUrl) return null;
+
+  const records: LotteryRecord[] = [];
+  let page = 1;
+  const maxPages = 10;
+
+  while (page <= maxPages) {
+    const url = `${source.apiUrl}?page=${page}&pageSize=${source.pageSize}`;
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': getRandomUserAgent() },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok) break;
+
+      const json = await response.json();
+      if (json.status !== '10' || !json.data?.data?.length) break;
+
+      const yearStr = String(year);
+      for (const item of json.data.data) {
+        const issue = item.period || '';
+        if (!issue.startsWith(yearStr)) continue;
+
+        const dateStr = item.lottery_date || '';
+        const nums = (item.numbers || '').split(',').map((n: string) => parseInt(n.trim())).filter((n: number) => n >= 1 && n <= 49);
+        if (nums.length < 7) continue;
+
+        const y = parseInt(dateStr.substring(0, 4));
+        const m = parseInt(dateStr.substring(5, 7));
+        const d = parseInt(dateStr.substring(8, 10));
+
+        records.push({
+          Date: dateStr,
+          Year: y,
+          Issue: issue.substring(issue.length - 3),
+          Num1: nums[0], Num2: nums[1], Num3: nums[2],
+          Num4: nums[3], Num5: nums[4], Num6: nums[5],
+          Special: nums[6],
+          Special_Zodiac: getZodiacForCrawler(new Date(y, m - 1, d), nums[6]),
+        });
+      }
+
+      if (json.data.data.length < source.pageSize) break;
+      page++;
+    } catch {
+      break;
+    }
+  }
+
+  return records.length > 0 ? records : null;
+}
 
 export async function fetchYearData(year: number, sourceIndex = 0): Promise<string | null> {
   if (sourceIndex >= DATA_SOURCES.length) return null;
 
   const source = DATA_SOURCES[sourceIndex];
+
+  // API 数据源
+  if (source.type === 'api') {
+    const records = await fetchFromApi(source, year);
+    if (records && records.length > 0) {
+      // 将 API 数据转换为 HTML 格式供 extractDataFromYear 解析
+      return JSON.stringify(records);
+    }
+    return fetchYearData(year, sourceIndex + 1);
+  }
+
+  // HTML 数据源
   const urls = source.yearUrls(year).map(u => source.baseUrl + u);
 
   for (const url of urls) {
@@ -139,6 +210,16 @@ export async function fetchYearDataFromSource(year: number, baseUrl: string): Pr
 
 export function extractDataFromYear(html: string, year: number): LotteryRecord[] | null {
   if (!html) return null;
+
+  // API 数据源返回 JSON 格式
+  if (html.startsWith('[')) {
+    try {
+      const records = JSON.parse(html) as LotteryRecord[];
+      return records.length > 0 ? records : null;
+    } catch {
+      return null;
+    }
+  }
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');

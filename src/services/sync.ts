@@ -7,7 +7,64 @@ const CRAWL_URLS = [
   { name: '1688188彩票', url: 'https://www.1688188.com/' },
 ];
 
+const API_SOURCE = {
+  name: '开奖1868-API',
+  url: 'https://www.kj1868.cc/openapi/drawLottery/nam6/last.kj',
+  pageSize: 100,
+};
+
+async function fetchFromApi(year: number): Promise<DrawRecord[] | null> {
+  const records: DrawRecord[] = [];
+  let page = 1;
+  const maxPages = 10;
+
+  while (page <= maxPages) {
+    const url = `${API_SOURCE.url}?page=${page}&pageSize=${API_SOURCE.pageSize}`;
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok) break;
+
+      const json = await response.json();
+      if (json.status !== '10' || !json.data?.data?.length) break;
+
+      const yearStr = String(year);
+      for (const item of json.data.data) {
+        const issue = item.period || '';
+        if (!issue.startsWith(yearStr)) continue;
+
+        const dateStr = item.lottery_date || '';
+        const nums = (item.numbers || '').split(',').map((n: string) => parseInt(n.trim())).filter((n: number) => n >= 1 && n <= 49);
+        if (nums.length < 7) continue;
+
+        records.push({
+          issue: issue,
+          date: dateStr,
+          normals: nums.slice(0, 6),
+          special: nums[6],
+        });
+      }
+
+      if (json.data.data.length < API_SOURCE.pageSize) break;
+      page++;
+    } catch {
+      break;
+    }
+  }
+
+  return records.length > 0 ? records : null;
+}
+
 async function fetchYearHtml(year: number): Promise<{ html: string; source: string } | null> {
+  // 先尝试 API 源
+  const apiRecords = await fetchFromApi(year);
+  if (apiRecords && apiRecords.length > 0) {
+    return { html: JSON.stringify(apiRecords), source: API_SOURCE.name };
+  }
+
+  // 再尝试 HTML 源
   for (const source of CRAWL_URLS) {
     const urlsToTry = [
       `${source.url}${year}/`,
@@ -34,6 +91,16 @@ async function fetchYearHtml(year: number): Promise<{ html: string; source: stri
 }
 
 function parseHtmlToRecords(html: string, targetYear: number): DrawRecord[] {
+  // API 数据源返回 JSON 格式
+  if (html.startsWith('[')) {
+    try {
+      const records = JSON.parse(html) as DrawRecord[];
+      return records.filter(r => r.date.startsWith(String(targetYear)));
+    } catch {
+      return [];
+    }
+  }
+
   const records: DrawRecord[] = [];
   const cleanHtml = html.replace(/\r\n/g, '').replace(/\n/g, '');
   const blockRegex = /<div class="kj-tit">[\s\S]*?<\/div>[\s\S]*?<div class="kj-box">[\s\S]*?<\/div>/g;
