@@ -13,16 +13,9 @@ const REFRESH = process.argv.includes('--refresh');
 
 const DATA_SOURCES = [
   {
-    name: '开奖1868-香港六合彩',
+    name: '开奖1868-新澳门六合彩',
     type: 'api',
-    apiUrl: 'https://www.kj1868.cc/openapi/drawLottery/xg6/last.kj',
-    defaultYearStart: 2021,
-    pageSize: 100,
-  },
-  {
-    name: '开奖1868-澳门六合彩',
-    type: 'api',
-    apiUrl: 'https://www.kj1868.cc/openapi/drawLottery/am6/last.kj',
+    apiUrl: 'https://www.kj1868.cc/openapi/drawLottery/nam6/last.kj',
     defaultYearStart: 2021,
     pageSize: 100,
   },

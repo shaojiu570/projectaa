@@ -224,7 +224,7 @@ function formatMessage(pred, data) {
   const dateStr = formatDate(new Date()).split(' ')[0];
 
   const lines = [
-    `【六合彩预测】第${nextIssue}期 (${dateStr})`,
+    `【新澳门六合彩预测】第${nextIssue}期 (${dateStr})`,
     `基于第${lastIssueNum}期数据`,
     '',
   ];

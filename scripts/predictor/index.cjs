@@ -12,7 +12,7 @@ const { formatDate, getZodiacOfRecord, getElementOfRecord, getColor } = require(
  * 主函数
  */
 async function main() {
-  console.log('=== 六合彩自动预测 ===');
+  console.log('=== 新澳门六合彩自动预测 ===');
   console.log('时间:', formatDate(new Date()));
   console.log('');
 
