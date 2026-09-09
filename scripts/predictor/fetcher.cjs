@@ -16,8 +16,24 @@ const DATA_SOURCES = [
     name: '开奖1868-新澳门六合彩',
     type: 'api',
     apiUrl: 'https://www.kj1868.cc/openapi/drawLottery/nam6/last.kj',
-    defaultYearStart: 2021,
+    defaultYearStart: 2026,
     pageSize: 100,
+  },
+  {
+    name: '123720彩票网',
+    type: 'html',
+    baseUrl: 'https://kj.123720c.com/kj/',
+    yearUrls: (year) => [`${year}/`, `?year=${year}`, `index_${year}.html`, `history/${year}.html`],
+    validation: (text) => /ball/i.test(text) && text.includes('六合彩'),
+    defaultYearStart: 2020,
+  },
+  {
+    name: '澳门六合彩',
+    type: 'html',
+    baseUrl: 'https://38.11.29.1:50001/historys/mo/',
+    yearUrls: (year) => [`${year}.html`],
+    validation: (text) => text.length > 1000,
+    defaultYearStart: 2020,
   },
 ];
 
@@ -81,6 +97,35 @@ async function fetchFromApi(source, year) {
 }
 
 // ====================== HTML 解析（备用） ======================
+
+async function fetchFromHtml(source, year) {
+  const records = [];
+  const urls = source.yearUrls(year).map(u => source.baseUrl + u);
+
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!resp.ok) continue;
+
+      const html = await resp.text();
+      if (!source.validation(html)) continue;
+
+      const parsed = parseBlockStructure(html);
+      const yearStr = String(year);
+      const yearRecords = parsed.filter(r => r.issue.startsWith(yearStr));
+      if (yearRecords.length > 0) {
+        records.push(...yearRecords);
+        break;
+      }
+    } catch (e) {
+      console.log(`   请求失败: ${url} - ${e.message}`);
+    }
+  }
+  return records;
+}
 
 function parseBlockStructure(html) {
   const records = [];
@@ -175,7 +220,28 @@ async function fetchData() {
       }
     }
 
-    if (allRecords.length >= 100) {
+    if (source.type === 'html') {
+      for (let year = currentYear; year >= source.defaultYearStart; year--) {
+        // 跳过 API 源已获取的年份
+        if (year >= DATA_SOURCES[0].defaultYearStart) continue;
+
+        const records = await fetchFromHtml(source, year);
+        let added = 0;
+        for (const r of records) {
+          if (!allRecords.find(x => x.issue === r.issue)) {
+            allRecords.push(r);
+            added++;
+          }
+        }
+        if (records.length > 0) {
+          console.log(`   ${year}年 → ${records.length} 条${added > 0 ? `，新增${added}` : '（全部重复）'}`);
+        } else {
+          console.log(`   ${year}年 → 无数据`);
+        }
+      }
+    }
+
+    if (allRecords.length >= 500) {
       console.log(`\n✅ ${source.name} 累计获取 ${allRecords.length} 条，不再尝试后续数据源`);
       break;
     }
