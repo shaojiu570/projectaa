@@ -261,6 +261,17 @@ function TypeCard({ type, onToggle, onResultCount, onAlgoToggle, onAlgoWeight, o
                 <button key={n} onClick={() => onResultCount(n)}
                   className={`px-2 py-0.5 text-xs rounded-xl border transition-colors ${type.resultCount === n ? 'bg-indigo-100 border-indigo-300 text-indigo-700 font-medium' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{n}</button>
               ))}
+              <input
+                type="number"
+                min={1}
+                max={bm?.resultCountMax || 49}
+                value={type.resultCount}
+                onChange={e => {
+                  const v = parseInt(e.target.value);
+                  if (!isNaN(v) && v >= 1 && v <= (bm?.resultCountMax || 49)) onResultCount(v);
+                }}
+                className="w-14 px-1.5 py-0.5 text-xs rounded-xl border border-gray-200 text-center text-gray-700 focus:border-indigo-300 focus:ring-1 focus:ring-indigo-200 outline-none"
+              />
             </div>
 
             <div className="space-y-0.5">
