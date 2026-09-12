@@ -79,9 +79,10 @@
 ### 4.4 核心预测流程
 1. 各类型勾选算法、调权重 → 点「开始预测」
 2. `runPrediction`：用**当前本地数据直接计算**（不触发爬虫）
-3. 每类型：各算法对分类打分 → 按权重(归一化)融合 → 排序 TOP N（`computeTopN = resultCount`）
+3. 每类型：各算法对分类打分 → 按权重(归一化)融合 → 排序 TOP N（`computeTopN = min(max(1,resultCount), categories.length-1)`）
 4. 各类型 TOP N 分类映射到号码 → 加权融合 49 码 → 输出推荐号码 + 各类型分类概率
 5. 无「综合推荐」单独块，直接展示每类型 TOP N 与每号概率条
+6. **推荐数量支持自定义输入**：预设按钮（1/2/3/5/10/20/30/49）+ 任意数字输入框（范围 1-49）
 
 ### 4.5 命中统计与自动调权
 - **命中统计**：已保存的预测逐类型按实际开奖匹配验证（号码/生肖/尾数/头数/五行等全部类型），显示命中率条
@@ -135,20 +136,32 @@ UI：结果卡显示「入选 X/Y 算法」徽章、「候选模型单独命中�
 |------|------|
 | `constants.cjs` | 生肖/五行/立春库、`defaultTypes()`、`buildTypeMapper`、读取 `config.json` 得 `EFFECTIVE_TYPES`/`FINAL_COUNT` |
 | `models.cjs` | `runGenericAlgo(algoId,...)`（14 个通用算法实现，与前端一致）+ `simulateTypeModel(id,type,...)` 按类型参数化调用 |
-| `predictor.cjs` | `fuseModels` 按权重融合各类型；`computeAdaptiveWeights`（**每 10 期**逐期样本外评估命中 → softmax → 权重复位）；`runPrediction` → 每类型 TopN + 综合 49 码 |
-| `fetcher.cjs` | 抓取开奖数据（数据不足 100 期则失败并通知） |
+| `predictor.cjs` | `fuseModels` 按权重融合各类型；`runPrediction` → 每类型 TopN + 综合 49 码 |
+| `fetcher.cjs` | 抓取开奖数据：**双数据源**（kj1868.cc API 获取 2026 年新澳门六合彩 + 旧 HTML 源获取 2020-2025 历史数据） |
 | `notifier.cjs` | 多渠道推送：Telegram / Bark / 钉钉 / 飞书 / 企业微信（环境变量配置）；`formatMessage` 与本地格式一致 |
 | `index.cjs` | 主入口：取数 → 预测 → 控制台输出 → 推送 |
 
 脚本内置默认类型 `number(30)/tail(8)/head(4)/element(4)/zodiac(9)`；配置中的类别/号码范围由前端推送生成，生肖/五行在脚本端仍按记录日期动态映射。
 
+**数据源说明**：
+- **kj1868.cc API**：`nam6`（新澳门六合彩），仅覆盖 2026 年数据
+- **旧 HTML 源**（123720c）：获取 2020-2025 历史数据，补充 kj1868 API 的历史空白
+- 开奖记录格式包含：期号、日期、特码、波色、五行
+
+**定时任务**：北京时间早上 6:30 自动执行（GitHub Actions cron）
+
 ---
 
 ## 七、数据同步与爬虫
 
-- `sync.ts`：优先后端 `http://localhost:3001/api/data/export`，后端不可用降级网页爬虫（多源 123720c / 澳门六合彩 / 1688188），启动自动同步一次
-- `crawler.ts`：多源 URL 尝试、重试+退避、HTML 解析、增量更新
+- `sync.ts`：优先后端 `http://localhost:3001/api/data/export`，后端不可用降级网页爬虫（多源 123720c / 澳门六合彩 / 1688188）+ **kj1868.cc API 备用源**，启动自动同步一次
+- `crawler.ts`：多源 URL 尝试、重试+退避、HTML 解析、增量更新；**新增 kj1868.cc API 作为第三数据源**，旧源失效时自动切换
 - `History` 页含「爬虫」子页（`CrawlerPanel`）：配置 URL、手动触发、进度显示
+
+**数据源优先级**：
+1. 后端 API（localhost:3001）
+2. 旧 HTML 源（123720c / 澳门六合彩）
+3. kj1868.cc API（备用源，自动切换）
 
 ---
 
@@ -164,16 +177,22 @@ UI：结果卡显示「入选 X/Y 算法」徽章、「候选模型单独命中�
 
 | 修改 | 说明 |
 |------|------|
+| **自定义类型三个问题修复** | 修复回测100%命中率（computeTopN限制）、待开奖状态（getActualCategory兜底）、综合推荐不含新类型（RangeEditor同步过滤） |
+| **推荐数量自定义输入** | 预设按钮 + 数字输入框，支持任意 1-49 推荐数量 |
+| **自动脚本数据源修复** | fetcher.cjs 从 xg6（香港）→ nam6（新澳门六合彩），添加旧HTML源获取2020-2025历史数据 |
+| **前端爬虫添加备用源** | crawler.ts + sync.ts 添加 kj1868.cc API 作为第三数据源，旧源失效自动切换 |
+| **数据源改为新澳门六合彩** | 脚本数据源从香港六合彩切换到新澳门六合彩（nam6） |
+| **定时任务改为北京时间早上6:30** | GitHub Actions cron 调整执行时间 |
+| **脚本更新** | 数据源换kj1868/去掉自适应权重/开奖记录加波色五行 |
 | **大改造：删智能预测** | 删除分离预测/SeparatedPrediction*/ModelContext/FunnelContext/PredictionHistoryContext/library.ts 等，唯一入口为动态预测 |
 | **统一 14 通用算法** | 全系统共用 `ALGO_FACTORIES`/`PREDEFINED_ALGOS`，支持任意分类类型参数化 |
 | **生肖/五行动态映射** | 前端日期感知 mapper + 脚本 per-record 映射 + `getZodiacByNumber` pre-lichun 修复 + 马尔可夫动态映射 |
 | **去综合推荐** | 前端/脚本都不再输出「综合推荐」块，直接展示各类型 TOP N |
-| **预测按日期降序** | `displayRecords` 按 date 降序展示 |
 | **回测重建 + 全候选** | `runTypeBacktest` 候选 = 全部已启用算法（与该类型勾选无关） |
-| **回测 N+N 穷举** | 改为遍历 2^n−1 全部子集等权寻优全局最优 + 权重精调 + 三阶段进度条（本次） |
+| **回测 N+N 穷举** | 改为遍历 2^n−1 全部子集等权寻优全局最优 + 权重精调 + 三阶段进度条 |
 | **回测历史记录** | 每次回测自动保存（50 条上限），支持应用/删除/清空 |
 | **回测全部应用修复** | `applyWeightsToType` 改函数式 state 更新，修复批量仅最后一个类型生效的 bug |
-| **TopN 跟随 resultCount** | `computeTopN = min(max(1,resultCount), categories.length)` |
+| **TopN 跟随 resultCount** | `computeTopN = min(max(1,resultCount), categories.length-1)` |
 
 ---
 
@@ -199,5 +218,13 @@ npm run electron:build    # 完整构建 + 打包
 ---
 
 ## 附：当前待办 / 已知事项
-- 本地已有多个功能提交（贪心→穷举回测、回测记录、全部应用修复等）**尚未推送远端**（`origin/master`）——远端推送需等网络恢复 / 按约定通知后再执行
+
+### 待推送远端
+- 本地已有多个功能提交（自定义类型修复、推荐数量自定义、数据源修复等）**尚未推送远端**（`origin/master`）——远端推送需等网络恢复 / 按约定通知后再执行
+
+### 已知问题
 - `config.json` 中存在若干 `selectedAlgorithms` 条目有 weight 无 id 的旧残留数据，脚本 `constants.cjs` 会 `.filter(sa => sa && sa.id)` 过滤，不影响运行；前端重新一键推送后会覆盖为干净数据
+- **自定义类型数据保存问题**：用户反馈新建自定义类型时设定的号码数据可能不会保存，导致回测结果错误。代码审查显示 CustomTypeModal 和 persistTypes 逻辑正确，但用户实测仍不生效，需进一步排查
+
+### 技术说明
+- **仅供技术研究，不构成投资建议**
