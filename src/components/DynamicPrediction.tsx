@@ -183,8 +183,9 @@ function RangeEditor({ config, onSave, onClose }: {
     return [...new Set(nums)].filter(n => n >= 1 && n <= 49).sort((a, b) => a - b);
   };
   const handleSave = () => {
-    const cats = ranges.map(r => r.category.trim()).filter(Boolean);
-    const nums = ranges.map(r => parseNums(r.numbers));
+    const valid = ranges.filter(r => r.category.trim());
+    const cats = valid.map(r => r.category.trim());
+    const nums = valid.map(r => parseNums(r.numbers));
     onSave({ ...config, categories: cats, numberRanges: nums, resultCount: Math.min(config.resultCount, cats.length) });
   };
   return (
@@ -398,7 +399,7 @@ export default function DynamicPrediction() {
     for (let i = 0; i < type.categories.length; i++) {
       if ((type.numberRanges[i] || []).includes(rec.special)) return type.categories[i];
     }
-    return '';
+    return type.categories[0] || '';
   }, []);
 
   const hitStats = useMemo(() => {

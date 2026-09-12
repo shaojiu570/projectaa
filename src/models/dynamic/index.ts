@@ -97,7 +97,8 @@ function getPredictionRanges(type: PredictionTypeConfig, date: Date): number[][]
  * 与前端展示、自动发送脚本的判定窗口保持一致。
  */
 export function computeTopN(type: PredictionTypeConfig): number {
-  return Math.max(1, Math.min(type.resultCount || 1, type.categories.length));
+  const maxTopN = Math.max(1, type.categories.length - 1);
+  return Math.max(1, Math.min(type.resultCount || 1, maxTopN));
 }
 
 type AlgoFactory = (cats: string[], getCat: (d: DrawRecord) => string) =>
