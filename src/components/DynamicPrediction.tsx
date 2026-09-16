@@ -248,9 +248,7 @@ function TypeCard({ type, onToggle, onResultCount, onAlgoToggle, onAlgoWeight, o
             <button onClick={() => setExpanded(!expanded)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl">
               {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
             </button>
-            {!type.isBuiltin && (
-              <button onClick={onDelete} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button>
-            )}
+            <button onClick={onDelete} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         </div>
 
