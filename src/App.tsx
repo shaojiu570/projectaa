@@ -5,12 +5,11 @@ import { ModelLibraryProvider } from './stores/ModelLibraryContext';
 import Dashboard from './components/Dashboard';
 import DynamicPrediction from './components/DynamicPrediction';
 import History from './components/History';
-import Analysis from './components/Analysis';
 import Config from './components/Config';
 import StartupStatus from './components/StartupStatus';
-import { LayoutDashboard, Clock, BarChart3, Settings, CheckCircle, Brain, Layers } from 'lucide-react';
+import { LayoutDashboard, Clock, Settings, CheckCircle, Brain, Layers } from 'lucide-react';
 
-type Tab = 'dashboard' | 'dynamic' | 'history' | 'analysis' | 'config';
+type Tab = 'dashboard' | 'dynamic' | 'history' | 'config';
 
 function AppInner() {
   const { data } = useData();
@@ -22,7 +21,6 @@ function AppInner() {
     { key: 'dashboard', label: '数据总览', icon: <LayoutDashboard className="w-4 h-4" /> },
     { key: 'dynamic', label: '动态预测', icon: <Layers className="w-4 h-4" /> },
     { key: 'history', label: '历史数据', icon: <Clock className="w-4 h-4" /> },
-    { key: 'analysis', label: '统计分析', icon: <BarChart3 className="w-4 h-4" /> },
     { key: 'config', label: '系统配置', icon: <Settings className="w-4 h-4" /> },
   ];
 
@@ -88,7 +86,6 @@ function AppInner() {
         {activeTab === 'dashboard' && <Dashboard data={data} />}
         {activeTab === 'dynamic' && <DynamicPrediction />}
         {activeTab === 'history' && <History />}
-        {activeTab === 'analysis' && <Analysis data={data} />}
         {activeTab === 'config' && <Config />}
       </main>
 
