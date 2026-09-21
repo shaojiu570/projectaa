@@ -8,6 +8,7 @@ import { PredictionTypeConfig, DynamicPredictionRecord } from '../models/dynamic
 import { calculateNextIssue, calculateNextDate } from '../utils/nextIssueCalculator';
 import { saveToStorage, loadFromStorage, clearStorage } from '../utils/storage';
 import NumberBall from './NumberBall';
+import BacktestV2Panel from './backtest/BacktestV2Panel';
 import {
   Play, Zap, Plus, Trash2, Clock, ChevronDown, ChevronRight, History,
   Hash, X, RefreshCw, Target, Sparkles, BarChart3, Copy, ClipboardCheck, Send, SendHorizontal,
@@ -490,6 +491,7 @@ export default function DynamicPrediction() {
 
   // ==================== 回测（权重寻优 + 样本外盲测 → 一键应用到模型） ====================
   const [showBacktest, setShowBacktest] = useState(false);
+  const [showBacktestV2, setShowBacktestV2] = useState(false);
   const [btLookback, setBtLookback] = useState(20);
   const [btBlindN, setBtBlindN] = useState(10);
   const [btRunning, setBtRunning] = useState(false);
@@ -603,6 +605,9 @@ export default function DynamicPrediction() {
             </button>
             <button onClick={() => setShowBacktest(true)} className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:bg-gray-50 transition-colors" title="各类型权重寻优 + 样本外盲测，结果可一键应用到对应模型">
               <BarChart3 className="w-3.5 h-3.5" /> 回测
+            </button>
+            <button onClick={() => setShowBacktestV2(true)} className="px-3 py-1.5 border border-indigo-200 bg-indigo-50 rounded-xl text-xs flex items-center gap-1.5 hover:bg-indigo-100 transition-colors" title="V2.0 Walk-Forward 回测 + 基准对比 + 过拟合检测">
+              <BarChart3 className="w-3.5 h-3.5 text-indigo-600" /> <span className="text-indigo-700">V2 回测</span>
             </button>
             <button onClick={() => setShowRecords(true)} className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:bg-gray-50 transition-colors">
               <History className="w-3.5 h-3.5" /> 记录 ({records.length})
@@ -1081,6 +1086,8 @@ export default function DynamicPrediction() {
           </div>
         </div>
       )}
+
+      <BacktestV2Panel open={showBacktestV2} onClose={() => setShowBacktestV2(false)} types={types} />
     </div>
   );
 }

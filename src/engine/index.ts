@@ -4,3 +4,4 @@
 
 export * from './types';
 export * from './backtest';
+export * from './weight';
