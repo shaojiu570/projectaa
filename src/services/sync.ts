@@ -16,7 +16,7 @@ const API_SOURCE = {
 async function fetchFromApi(year: number): Promise<DrawRecord[] | null> {
   const records: DrawRecord[] = [];
   let page = 1;
-  const maxPages = 10;
+  const maxPages = 20;
 
   while (page <= maxPages) {
     const url = `${API_SOURCE.url}?page=${page}&pageSize=${API_SOURCE.pageSize}`;
@@ -58,13 +58,7 @@ async function fetchFromApi(year: number): Promise<DrawRecord[] | null> {
 }
 
 async function fetchYearHtml(year: number): Promise<{ html: string; source: string } | null> {
-  // 先尝试 API 源
-  const apiRecords = await fetchFromApi(year);
-  if (apiRecords && apiRecords.length > 0) {
-    return { html: JSON.stringify(apiRecords), source: API_SOURCE.name };
-  }
-
-  // 再尝试 HTML 源
+  // 旧 HTML 源优先
   for (const source of CRAWL_URLS) {
     const urlsToTry = [
       `${source.url}${year}/`,
@@ -88,6 +82,28 @@ async function fetchYearHtml(year: number): Promise<{ html: string; source: stri
     }
   }
   return null;
+}
+
+async function fetchYearRecords(year: number): Promise<DrawRecord[]> {
+  const byIssue = new Map<string, DrawRecord>();
+
+  // 1) 旧 HTML 源
+  const result = await fetchYearHtml(year);
+  if (result) {
+    for (const r of parseHtmlToRecords(result.html, year)) {
+      byIssue.set(r.issue, r);
+    }
+  }
+
+  // 2) kj1868 API 补充缺失期号（旧源优先，不覆盖已有）
+  const apiRecords = await fetchFromApi(year);
+  if (apiRecords) {
+    for (const r of apiRecords) {
+      if (!byIssue.has(r.issue)) byIssue.set(r.issue, r);
+    }
+  }
+
+  return [...byIssue.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function parseHtmlToRecords(html: string, targetYear: number): DrawRecord[] {
@@ -154,13 +170,12 @@ export async function syncFromBackend(): Promise<DrawRecord[]> {
 
   try {
     const today = new Date();
-    const startYear = 2023;
+    const startYear = 2020;
     const allRecords: DrawRecord[] = [];
 
     for (let y = startYear; y <= today.getFullYear(); y++) {
-      const result = await fetchYearHtml(y);
-      if (result) {
-        const records = parseHtmlToRecords(result.html, y);
+      const records = await fetchYearRecords(y);
+      if (records.length > 0) {
         allRecords.push(...records);
         console.log(`爬取 ${y} 年 ${records.length} 期`);
       }

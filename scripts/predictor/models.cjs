@@ -213,7 +213,6 @@ function runGenericAlgo(algoId, cats, getCat, data, seed) {
       const lr = 0.1; const discount = 0.9;
       for (let i = 1; i < recent.length; i++) {
         const state = getCat(recent[i - 1]);
-        const action = getCat(recent[i]);
         const reward = 1;
         if (qValues[state] != null) qValues[state] = qValues[state] + lr * (reward + discount * Math.max(...cats.map(c => qValues[c])) - qValues[state]);
       }
@@ -259,7 +258,109 @@ function simulateTypeModel(id, type, data, baseSeed) {
   return probs;
 }
 
+/**
+ * 样本外评估：与前端 evaluateAlgorithmsSampleOut 完全一致
+ * 对每个类型/算法，逐期滚动（训练只用到评估期之前的数据）统计命中率与平均名次
+ */
+function evaluateAlgorithmsSampleOut(data, enabledTypes, window = 30) {
+  const result = {};
+  if (!data || data.length < 10) return result;
+
+  enabledTypes.forEach((type, typeIdx) => {
+    const getCat = buildTypeMapper(type);
+    const enabledAlgos = (type.selectedAlgorithms || []).filter(ta =>
+      GENERIC_ALGO_NAMES.includes(ta.id) && (!('enabled' in ta) || ta.enabled !== false)
+    );
+    if (enabledAlgos.length === 0) return;
+
+    const acc = {};
+    enabledAlgos.forEach(ta => { acc[ta.id] = { hits: 0, count: 0, rankSum: 0 }; });
+
+    const start = Math.max(0, data.length - window);
+    for (let pi = start; pi < data.length; pi++) {
+      const trainData = data.slice(0, pi);
+      if (trainData.length < 5) continue;
+      const testRecord = data[pi];
+      const lastIssue = trainData[trainData.length - 1]?.Issue || trainData[trainData.length - 1]?.issue || '0';
+      const seed = String(lastIssue).split('').reduce((a, c) => a * 31 + c.charCodeAt(0), 0) & 0x7fffffff;
+      const actual = getCat(testRecord);
+
+      enabledAlgos.forEach((ta, idx) => {
+        const probs = runGenericAlgo(ta.id, type.categories, getCat, trainData, seed + 1000 + typeIdx * 100 + idx * 1000);
+        const sorted = type.categories.map(c => ({ c, p: probs[c] || 0 })).sort((a, b) => b.p - a.p);
+        const rank = sorted.findIndex(x => x.c === actual) + 1;
+        acc[ta.id].count++;
+        acc[ta.id].rankSum += rank > 0 ? rank : type.categories.length;
+        if (rank === 1) acc[ta.id].hits++;
+      });
+    }
+
+    const typeResult = {};
+    enabledAlgos.forEach(ta => {
+      const s = acc[ta.id];
+      typeResult[ta.id] = {
+        algoId: ta.id,
+        hitRate: s.count > 0 ? s.hits / s.count : 0,
+        hitCount: s.hits,
+        totalCount: s.count,
+        avgRank: s.count > 0 ? s.rankSum / s.count : 99,
+      };
+    });
+    result[type.id] = typeResult;
+  });
+
+  return result;
+}
+
+/**
+ * 自动调权：与前端 autoTuneWeights 完全一致
+ * 仅对 autoWeight=true 的类型生效：命中×3，夹紧 0.05~1，最后再做一次归一化
+ */
+function autoTuneWeights(types, data, { print = false } = {}) {
+  if (!data || data.length < 10) return types;
+  const enabledTypes = types.filter(t => t && t.enabled && t.autoWeight);
+  if (enabledTypes.length === 0) return types;
+  const evalResult = evaluateAlgorithmsSampleOut(data, types);
+
+  return types.map(type => {
+    if (!type || !type.enabled || !type.autoWeight) return type;
+    const stats = evalResult[type.id];
+    if (!stats || Object.keys(stats).length === 0) return type;
+
+    const newAlgos = (type.selectedAlgorithms || []).map(ta => {
+      const st = stats[ta.id];
+      const hitRate = st ? st.hitRate : 0;
+      const weight = hitRate > 0 ? Math.max(0.05, Math.min(1, hitRate * 3)) : 0.05;
+      return {
+        ...ta,
+        weight: parseFloat(weight.toFixed(2)),
+        hitRate,
+        hitCount: st?.hitCount || 0,
+        totalCount: st?.totalCount || 0,
+      };
+    });
+
+    const totalW = newAlgos.reduce((s, a) => s + (a.weight || 0), 0);
+    const normalized = totalW > 0
+      ? newAlgos.map(a => ({ ...a, weight: parseFloat(((a.weight || 0) / totalW).toFixed(2)) }))
+      : newAlgos;
+
+    if (print) {
+      console.log(`  ⚖️  [${type.name || type.id}] 自动调权结果：`);
+      normalized.forEach(a => {
+        const st = stats[a.id];
+        const rate = st ? `命中${st.hitCount}/${st.totalCount}=${(st.hitRate * 100).toFixed(1)}% 平均排名${st.avgRank.toFixed(1)}` : '无样本';
+        console.log(`    · ${String(a.id).padEnd(10)} 权重 ${a.weight.toFixed(2)}  (${rate})`);
+      });
+    }
+
+    return { ...type, selectedAlgorithms: normalized };
+  });
+}
+
 module.exports = {
   runGenericAlgo,
   simulateTypeModel,
+  evaluateAlgorithmsSampleOut,
+  autoTuneWeights,
 };
